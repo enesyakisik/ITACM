@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AssetControl — IT Asset Control Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%234f46e5'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>A</text></svg>">
+</head>
+<body>
+
+  <!-- ============ ONBOARDING (first run) ============ -->
+  <div id="onboarding-screen" class="login-screen hidden">
+    <div class="login-card" style="width:460px">
+      <div class="login-logo">
+        <span class="logo-mark"><span class="ms">rocket_launch</span></span>
+        <div>
+          <h1>Welcome to AssetControl</h1>
+          <p>First-run setup — customize your instance</p>
+        </div>
+      </div>
+      <form id="onboarding-form">
+        <h3 class="ob-section">Company</h3>
+        <label>Company name *
+          <input type="text" name="companyName" required maxlength="80" placeholder="Acme Teknoloji A.Ş.">
+        </label>
+        <label>Company logo <span class="ob-hint">(optional, PNG/JPG/SVG, max ~300KB)</span>
+          <input type="file" name="logoFile" accept="image/*">
+        </label>
+        <div id="ob-logo-preview" class="ob-logo-preview hidden"></div>
+        <h3 class="ob-section">Administrator account</h3>
+        <label>Display name *
+          <input type="text" name="adminUsername" required placeholder="IT Admin">
+        </label>
+        <label>Email *
+          <input type="email" name="adminEmail" required placeholder="admin@company.com" autocomplete="username">
+        </label>
+        <label>Password * <span class="ob-hint">(min 8 characters)</span>
+          <input type="password" name="adminPassword" required minlength="8" autocomplete="new-password">
+        </label>
+        <div id="onboarding-error" class="login-error hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="onboarding-btn">
+          <span class="ms">rocket_launch</span> Complete Setup
+        </button>
+      </form>
+      <p class="login-footnote">These settings brand the interface and the printed handover forms.</p>
+    </div>
+  </div>
+
+  <!-- ============ LOGIN ============ -->
+  <div id="login-screen" class="login-screen hidden">
+    <div class="login-card">
+      <div class="login-logo">
+        <span class="logo-mark" data-brand-logo><span class="ms">inventory_2</span></span>
+        <div>
+          <h1 data-brand-name>AssetControl</h1>
+          <p>IT Asset Control Pro</p>
+        </div>
+      </div>
+      <form id="login-form" autocomplete="on">
+        <label>Email
+          <input type="email" name="email" required autocomplete="username" placeholder="admin@example.com">
+        </label>
+        <label>Password
+          <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••">
+        </label>
+        <div id="login-error" class="login-error hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign in</button>
+      </form>
+      <p class="login-footnote" id="login-mode-note"></p>
+    </div>
+  </div>
+
+  <!-- ============ APP SHELL ============ -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-mark" data-brand-logo><span class="ms">inventory_2</span></span>
+        <div>
+          <strong data-brand-name>AssetControl</strong>
+          <small>Enterprise ITAM</small>
+        </div>
+      </div>
+      <div class="sidebar-cta">
+        <button class="btn btn-primary btn-block" id="sidebar-new-asset"><span class="ms">add</span> New Asset</button>
+      </div>
+      <nav id="nav" class="sidebar-nav"></nav>
+      <div class="sidebar-user">
+        <span class="avatar" id="user-avatar"></span>
+        <div class="sidebar-user-info">
+          <strong id="user-name"></strong>
+          <small id="user-role"></small>
+        </div>
+        <button id="logout-btn" class="icon-btn icon-btn-dark" title="Sign out"><span class="ms">logout</span></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-search">
+          <span class="ms">search</span>
+          <input type="search" id="global-search" placeholder="Search assets, employees, or tags (Cmd+K)">
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="btn-notifications" title="Notifications"><span class="ms">notifications</span></button>
+          <button class="icon-btn" id="btn-help" title="Help"><span class="ms">help</span></button>
+          <button class="icon-btn" id="btn-settings" title="Settings"><span class="ms">settings</span></button>
+          <span class="avatar avatar-top" id="topbar-avatar" style="cursor:pointer" title="My profile"></span>
+        </div>
+      </header>
+      <div id="view" class="view"></div>
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root"></div>
+  <div id="print-root" class="print-root"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/views.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

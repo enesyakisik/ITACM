@@ -1,0 +1,30 @@
+/** snake_case DB rows → the same camelCase API shapes the Firebase provider returns. */
+
+const toCamel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+
+function mapRow(row) {
+  if (!row) return null;
+  const out = {};
+  for (const [key, value] of Object.entries(row)) out[toCamel(key)] = value;
+  return out;
+}
+
+const mapRows = (rows) => rows.map(mapRow);
+
+/** Assets carry a nested currentEmployee object in the API contract. */
+function mapAsset(row) {
+  if (!row) return null;
+  const a = mapRow(row);
+  a.currentEmployee = row.current_employee_id
+    ? { id: row.current_employee_id, fullName: row.current_employee_name }
+    : null;
+  delete a.currentEmployeeId;
+  delete a.currentEmployeeName;
+  return a;
+}
+
+const isUuid = (v) =>
+  typeof v === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+module.exports = { mapRow, mapRows, mapAsset, isUuid };
