@@ -16,6 +16,7 @@ if (config.backend !== 'postgres') {
 }
 
 const { pool, query } = require('../src/providers/postgres/pool');
+const { DEFAULT_LOCATIONS } = require('../src/utils/defaults');
 const { ensureDatabase } = require('../src/providers/postgres/migrate');
 
 const rnd = (n) => Math.floor(Math.random() * n);
@@ -124,10 +125,10 @@ async function main() {
   for (const a of assets) {
     const { rows } = await query(
       `INSERT INTO assets (asset_tag, serial_number, brand, model, category, mac_ethernet, mac_wifi,
-                           specs, status, warranty_end_date, qr_code_string, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'In Stock',$9,$10,$11) RETURNING id`,
+                           specs, status, warranty_end_date, qr_code_string, created_at, location)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'In Stock',$9,$10,$11,$12) RETURNING id`,
       [a.tag, a.sn, a.brand, a.model, a.cat, a.macE, a.macW, JSON.stringify(a.specs),
-       a.warranty, `ITACPRO|ASSET|${a.tag}`, daysAgo(rnd(900) + 30)]
+       a.warranty, `ITACPRO|ASSET|${a.tag}`, daysAgo(rnd(900) + 30), pick(DEFAULT_LOCATIONS)]
     );
     a.id = rows[0].id;
   }

@@ -10,7 +10,7 @@ const buildQrCodeString = (assetTag) => `ITACPRO|ASSET|${assetTag}`;
 function sanitize(body, { partial = false } = {}) {
   const {
     assetTag, serialNumber, brand, model, category,
-    macEthernet, macWifi, specs, status, warrantyEndDate,
+    macEthernet, macWifi, specs, status, warrantyEndDate, location,
   } = body;
 
   if (!partial) {
@@ -48,6 +48,7 @@ function sanitize(body, { partial = false } = {}) {
       os: specs?.os || null,
     });
   }
+  if (location !== undefined) data.location = location ? String(location).trim() : null;
   return data;
 }
 
@@ -70,14 +71,14 @@ async function createAsset(body) {
     try {
       const { rows } = await query(
         `INSERT INTO assets (asset_tag, serial_number, brand, model, category,
-                             mac_ethernet, mac_wifi, specs, status, warranty_end_date, purchase_date, qr_code_string)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'{}'::jsonb),COALESCE($9,'In Stock'),$10,$11,$12)
+                             mac_ethernet, mac_wifi, specs, status, warranty_end_date, purchase_date, qr_code_string, location)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'{}'::jsonb),COALESCE($9,'In Stock'),$10,$11,$12,$13)
          RETURNING id, asset_tag`,
         [
           data.asset_tag, data.serial_number, data.brand, data.model, data.category,
           data.mac_ethernet || null, data.mac_wifi || null, data.specs || null,
           data.status || null, data.warranty_end_date || null, data.purchase_date || null,
-          buildQrCodeString(data.asset_tag),
+          buildQrCodeString(data.asset_tag), data.location || null,
         ]
       );
       return { id: rows[0].id, assetTag: rows[0].asset_tag };
@@ -122,7 +123,7 @@ async function updateAsset(assetId, body) {
   });
 }
 
-async function listAssets({ status, category, employeeId, search, limit = 100, offset = 0 } = {}) {
+async function listAssets({ status, category, employeeId, search, location, limit = 100, offset = 0 } = {}) {
   const where = [];
   const params = [];
   if (status) { params.push(status); where.push(`status = $${params.length}`); }
@@ -132,6 +133,7 @@ async function listAssets({ status, category, employeeId, search, limit = 100, o
     params.push(employeeId);
     where.push(`current_employee_id = $${params.length}`);
   }
+  if (location) { params.push(location); where.push(`location = $${params.length}`); }
   if (search) {
     params.push(`%${search}%`);
     where.push(

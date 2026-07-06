@@ -174,3 +174,10 @@ ALTER TABLE asset_history ADD CONSTRAINT asset_history_action_type_check
 
 -- Category lifecycle durations (months); NULL -> application defaults
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS lifecycles JSONB;
+
+-- Office locations list (array of strings stored as JSONB)
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS locations JSONB;
+
+-- Physical location of each asset (denormalized string)
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_location TEXT;

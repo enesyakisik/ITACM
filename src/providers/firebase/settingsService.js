@@ -1,7 +1,8 @@
 /** App settings (firebase): company branding + onboarding flag in settings/app. */
 const { db, FieldValue } = require('./firebase');
 const { HttpError } = require('../../utils/httpError');
-const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES } = require('../../utils/defaults');
+const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS } = require('../../utils/defaults');
+
 
 const REF = () => db.collection('settings').doc('app');
 
@@ -14,6 +15,8 @@ async function getSettings() {
     onboarded: !!s.onboarded,
     handoverTerms: s.handoverTerms || DEFAULT_HANDOVER_TERMS,
     lifecycles: { ...DEFAULT_LIFECYCLES, ...(s.lifecycles || {}) },
+    locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
+    defaultLocation: s.defaultLocation || null,
   };
 }
 
@@ -25,7 +28,7 @@ function validateLogo(logo) {
   if (logo.length > 400_000) throw HttpError.badRequest('Logo too large — keep it under ~300KB');
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation }) {
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -49,6 +52,15 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
     }
     patch.lifecycles = lifecycles;
   }
+
+  if (locations !== undefined && locations !== null) {
+    if (!Array.isArray(locations)) throw HttpError.badRequest('locations must be an array of strings');
+    const clean = locations.map((l) => String(l).trim()).filter(Boolean);
+    if (clean.length === 0) throw HttpError.badRequest('At least one location is required');
+    patch.locations = clean;
+  }
+
+  if (defaultLocation !== undefined) patch.defaultLocation = defaultLocation;
 
   await REF().set(patch, { merge: true });
   return getSettings();

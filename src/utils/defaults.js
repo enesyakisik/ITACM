@@ -11,4 +11,13 @@ const DEFAULT_LIFECYCLES = {
   Printer: 60, Network: 84, Peripheral: 36, Other: 48,
 };
 
-module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES };
+/** Default office locations — shown in the asset form and Product Catalog. */
+const DEFAULT_LOCATIONS = [
+  'Main Office',
+  'Istanbul Branch',
+  'Remote / Home Office',
+  'Warehouse',
+  'Service Center',
+];
+
+module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS };

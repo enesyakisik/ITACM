@@ -1,11 +1,12 @@
 /** App settings (postgres): company branding, handover terms, onboarding flag. */
 const { query } = require('./pool');
 const { HttpError } = require('../../utils/httpError');
-const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES } = require('../../utils/defaults');
+const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS } = require('../../utils/defaults');
+
 
 async function getSettings() {
   const { rows } = await query(
-    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles FROM app_settings WHERE id = 1'
+    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location FROM app_settings WHERE id = 1'
   );
   const s = rows[0] || {};
   return {
@@ -14,6 +15,8 @@ async function getSettings() {
     onboarded: !!s.onboarded,
     handoverTerms: s.handover_terms || DEFAULT_HANDOVER_TERMS,
     lifecycles: { ...DEFAULT_LIFECYCLES, ...(s.lifecycles || {}) },
+    locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
+    defaultLocation: s.default_location || null,
   };
 }
 
@@ -36,7 +39,7 @@ function validateLifecycles(lc) {
   }
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation }) {
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -52,10 +55,14 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
        company_logo   = CASE WHEN $2::text IS NOT NULL THEN $2 ELSE company_logo END,
        onboarded      = COALESCE($3, onboarded),
        handover_terms = CASE WHEN $4::text IS NOT NULL THEN $4 ELSE handover_terms END,
-       lifecycles     = CASE WHEN $5::jsonb IS NOT NULL THEN $5 ELSE lifecycles END
+       lifecycles     = CASE WHEN $5::jsonb IS NOT NULL THEN $5 ELSE lifecycles END,
+       locations      = CASE WHEN $6::jsonb IS NOT NULL THEN $6 ELSE locations END,
+       default_location = CASE WHEN $7::text IS NOT NULL THEN NULLIF($7, '__none__') ELSE default_location END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
-     lifecycles ? JSON.stringify(lifecycles) : null]
+     lifecycles ? JSON.stringify(lifecycles) : null,
+     locations ? JSON.stringify(locations.map((l) => String(l).trim()).filter(Boolean)) : null,
+     defaultLocation === null ? '__none__' : (defaultLocation ?? null)]
   );
   return getSettings();
 }

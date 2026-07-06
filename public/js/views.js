@@ -47,85 +47,192 @@ Views.dashboard = async function (el) {
   const d = await api('/dashboard/stats');
   const a = d.assets;
   const lowest = d.alerts.lowStockConsumables[0];
+  const eolOverdue = d.alerts.eolOverdueCount || 0;
+  const eolSoon = d.alerts.eolSoonCount || 0;
+  const attnItems = (d.alerts.expiringLicenseCount ? 1 : 0) + (lowest ? 1 : 0) + (eolOverdue ? 1 : 0);
+
+  const donut = (() => {
+    const dist = (d.locationDistribution || []).slice(0, 4);
+    const total = (d.locationDistribution || []).reduce((s, x) => s + x.count, 0) || 1;
+    const colors = ['#3525cd', '#2f80ed', '#00b8a9', '#94a3b8'];
+    const rings = dist.map((x, i) => {
+      const r = 84 - i * 17;
+      const c = 2 * Math.PI * r;
+      const frac = Math.max(0.02, x.count / total);
+      return `<circle cx="100" cy="100" r="${r}" fill="none" stroke="#eceaf5" stroke-width="11"/>
+        <circle cx="100" cy="100" r="${r}" fill="none" stroke="${colors[i]}" stroke-width="11"
+          stroke-linecap="round" stroke-dasharray="${(frac * c).toFixed(1)} ${c.toFixed(1)}"
+          transform="rotate(-90 100 100)"/>`;
+    }).join('');
+    return `<svg width="196" height="196" viewBox="0 0 200 200" role="img" aria-label="Assets by location">
+      ${rings}<text x="100" y="107" text-anchor="middle" font-size="16" font-weight="700" fill="#464555">${total}</text></svg>`;
+  })();
+  const locColors = ['#3525cd', '#2f80ed', '#00b8a9', '#94a3b8'];
 
   el.innerHTML = `
-    ${pageHead('Dashboard Overview', 'System status and key metrics at a glance.',
-      `<span class="cell-sub" style="display:flex;align-items:center;gap:6px"><span class="ms ms-sm">calendar_today</span> Last updated: Just now</span>`)}
+    ${pageHead('Dashboard Overview', 'System status, hardware distribution, and operational metrics.', `
+      <span class="cell-sub" style="display:flex;align-items:center;gap:6px"><span class="ms ms-sm">sync</span> Last updated: Just now</span>
+      <button class="btn btn-outline" data-go="#/reports"><span class="ms">download</span> Export Report</button>`)}
 
-    ${d.alerts.expiringLicenseCount > 0 ? `
-    <div class="banner banner-amber">
-      <span class="ms">warning</span>
-      <span class="grow">${d.alerts.expiringLicenseCount} Software License${d.alerts.expiringLicenseCount > 1 ? 's' : ''} expiring in 30 days</span>
-      <button class="btn btn-sm btn-banner-amber" data-go="#/licenses">Action</button>
-    </div>` : ''}
-    ${lowest ? `
-    <div class="banner banner-rose">
-      <span class="ms">error</span>
-      <span class="grow">${esc(lowest.itemName)} stock is critically low (${lowest.totalStock} remaining)</span>
-      <button class="btn btn-sm btn-banner-rose" data-go="#/consumables">Reorder</button>
-    </div>` : ''}
-
-    <div class="grid grid-4" style="margin:20px 0">
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">Total Assets</h3>${iconChip('monitor', 'indigo')}</div>
-        <div class="metric-value">${a.total.toLocaleString()}</div>
-        <div class="metric-trend trend-up"><span class="ms">trending_up</span> ${a.inStock} in stock</div>
-      </div>
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">Active Handovers</h3>${iconChip('handshake', 'blue')}</div>
-        <div class="metric-value">${a.assigned.toLocaleString()}</div>
-        <div class="metric-trend trend-up"><span class="ms">trending_up</span> assigned to employees</div>
-      </div>
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">Items In Repair</h3>${iconChip('build', 'amber')}</div>
-        <div class="metric-value">${a.inRepair.toLocaleString()}</div>
-        <div class="metric-trend trend-flat"><span class="ms">remove</span> ${a.inRepair === 0 ? 'None open' : 'In service'}</div>
-      </div>
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">Low Stock Alert</h3>${iconChip('inventory_2', 'rose')}</div>
-        <div class="metric-value">${d.alerts.lowStockCount}</div>
-        <div class="metric-trend ${d.alerts.lowStockCount ? 'trend-down' : 'trend-flat'}">
-          <span class="ms">${d.alerts.lowStockCount ? 'trending_down' : 'remove'}</span>
-          ${d.alerts.lowStockCount ? 'Needs attention' : 'All healthy'}</div>
-      </div>
-    </div>
-
-    <div class="grid grid-dash">
-      <div class="card">
-        <div class="card-head">
-          <h3>Recent Handover Activity</h3>
-          <a href="#/handover" style="font-size:13px;font-weight:600">View All</a>
+    <div class="dash-grid">
+      <div>
+        <!-- 2x2 metric cards -->
+        <div class="grid grid-2" style="margin-bottom:20px">
+          <div class="card metric2 tint-indigo">
+            <div class="metric2-head">${iconChip('monitor', 'indigo')}
+              <span class="trend-chip up"><span class="ms">trending_up</span> ${a.inStock} in stock</span></div>
+            <div class="metric2-label">Total Assets</div>
+            <div class="metric2-value">${a.total.toLocaleString()}</div>
+          </div>
+          <div class="card metric2 tint-blue">
+            <div class="metric2-head">${iconChip('handshake', 'blue')}
+              <span class="trend-chip up"><span class="ms">trending_up</span> assigned</span></div>
+            <div class="metric2-label">Active Handovers</div>
+            <div class="metric2-value">${a.assigned.toLocaleString()}</div>
+          </div>
+          <div class="card metric2 tint-amber">
+            <div class="metric2-head">${iconChip('build', 'amber')}
+              <span class="trend-chip flat"><span class="ms">remove</span> ${a.inRepair ? 'In service' : 'None open'}</span></div>
+            <div class="metric2-label">Items in Repair</div>
+            <div class="metric2-value">${a.inRepair.toLocaleString()}</div>
+          </div>
+          <div class="card metric2 tint-rose">
+            <div class="metric2-head">${iconChip('inventory_2', 'rose')}
+              <span class="trend-chip ${d.alerts.lowStockCount ? 'down' : 'flat'}">
+                <span class="ms">${d.alerts.lowStockCount ? 'trending_down' : 'remove'}</span>
+                ${d.alerts.lowStockCount ? 'Needs attention' : 'All healthy'}</span></div>
+            <div class="metric2-label">Low Stock Items</div>
+            <div class="metric2-value">${d.alerts.lowStockCount}</div>
+          </div>
         </div>
-        <div class="table-wrap"><table class="data">
-          <thead><tr><th>Asset</th><th>Employee</th><th>Date</th><th>Status</th></tr></thead>
-          <tbody>
-            ${d.recentHandovers.length === 0 ? '<tr><td colspan="4" class="table-empty">No handovers yet.</td></tr>' :
-              d.recentHandovers.map((h) => `
-              <tr>
-                <td><div class="cell-title">${esc(h.asset)}</div><div class="cell-sub mono">${esc(h.assetTag)}</div></td>
-                <td>${esc(h.employee)}</td>
-                <td>${fmtDate(h.date)}</td>
-                <td>${badge('Completed')}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><h3>Expiring Licenses</h3></div>
-        ${d.alerts.expiringLicenses.length === 0 ? '<div class="table-empty">No licenses expiring soon.</div>' :
-          d.alerts.expiringLicenses.map((l) => `
-          <div class="exp-item">
-            ${iconChip('vpn_key', l.daysLeft <= 14 ? 'amber' : 'indigo')}
+
+        <!-- Recent handover activity -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head" style="align-items:flex-start">
             <div>
-              <strong>${esc(l.softwareName)}</strong>
-              <span class="cell-sub">${l.totalSeats} Seats${l.vendor ? ' • ' + esc(l.vendor) : ''}</span>
-              <div class="exp-days ${l.daysLeft <= 7 ? 'urgent' : ''}">Exp. in ${l.daysLeft} Days</div>
+              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Recent Handover Activity</h3>
+              <div class="cell-sub" style="margin-top:2px">Latest asset assignments and returns.</div>
             </div>
-          </div>`).join('')}
+            <button class="btn btn-outline btn-sm" data-go="#/handover">View All</button>
+          </div>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Asset</th><th>Employee</th><th>Date</th><th>Status</th></tr></thead>
+            <tbody>
+              ${d.recentHandovers.length === 0 ? '<tr><td colspan="4" class="table-empty">No handovers yet.</td></tr>' :
+                d.recentHandovers.map((h) => `
+                <tr>
+                  <td><div style="display:flex;align-items:center;gap:12px">
+                    <span class="icon-chip" style="background:var(--surface-container);color:var(--on-surface-variant)"><span class="ms">laptop_mac</span></span>
+                    <div><div class="cell-title">${esc(h.asset)}</div><div class="cell-sub mono">${esc(h.assetTag)}</div></div>
+                  </div></td>
+                  <td><div style="display:flex;align-items:center;gap:8px">
+                    <span class="avatar" style="width:28px;height:28px;font-size:10px">${esc(initials(h.employee))}</span>
+                    ${esc(h.employee)}</div></td>
+                  <td>${fmtDate(h.date)}</td>
+                  <td>${badge('Completed')}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>
+
+        <!-- Lifecycle EOL devices -->
+        <div class="card">
+          <div class="card-head" style="align-items:flex-start">
+            <div>
+              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Lifecycle EOL Devices</h3>
+              <div class="cell-sub" style="margin-top:2px">${eolOverdue} overdue • ${eolSoon} approaching end of lifecycle.</div>
+            </div>
+            <button class="btn btn-outline btn-sm" data-go="#/assets?lifecycle=overdue">Review</button>
+          </div>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Asset</th><th>Location</th><th>Holder</th><th>Purchased</th><th>EOL Date</th></tr></thead>
+            <tbody>
+              ${(d.alerts.eolOverdue || []).length === 0 ? '<tr><td colspan="5" class="table-empty">No devices past their lifecycle. 🎉</td></tr>' :
+                d.alerts.eolOverdue.map((x) => `
+                <tr class="asset-row" data-open-asset="${esc(x.id)}" style="cursor:pointer">
+                  <td><div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div><div class="cell-sub mono">${esc(x.assetTag)}</div></td>
+                  <td class="cell-sub">${esc(x.location || '—')}</td>
+                  <td>${x.currentEmployee ? esc(x.currentEmployee.fullName) : '<span class="cell-sub">In stock</span>'}</td>
+                  <td>${fmtDate(x.purchaseDate)}</td>
+                  <td><span class="pill pill-rose">${fmtDate(x.eolDate)}</span></td>
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <div>
+        <!-- Attention Required -->
+        <div class="card attn-card" style="margin-bottom:20px">
+          <div class="attn-head">
+            <div><h3>Attention Required</h3>
+              <div class="cell-sub">${attnItems} item${attnItems === 1 ? '' : 's'} need your review.</div></div>
+            <span class="attn-count">${attnItems}</span>
+          </div>
+          ${attnItems === 0 ? '<div class="table-empty">All clear. 🎉</div>' : ''}
+          ${d.alerts.expiringLicenseCount ? `
+          <div class="attn-item amber">
+            ${iconChip('vpn_key', 'amber')}
+            <div style="flex:1"><strong>License Expirations</strong>
+              <span class="cell-sub">${d.alerts.expiringLicenseCount} software license${d.alerts.expiringLicenseCount > 1 ? 's' : ''} expiring in 30 days.</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/licenses">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            </div>
+          </div>` : ''}
+          ${lowest ? `
+          <div class="attn-item rose">
+            ${iconChip('inventory_2', 'rose')}
+            <div style="flex:1"><strong>Low Hardware Stock</strong>
+              <span class="cell-sub">${esc(lowest.itemName)} stock is critically low (${lowest.totalStock} remaining).</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/consumables">Reorder <span class="ms ms-sm">arrow_forward</span></button></div>
+            </div>
+          </div>` : ''}
+          ${eolOverdue ? `
+          <div class="attn-item rose">
+            ${iconChip('history_toggle_off', 'rose')}
+            <div style="flex:1"><strong>Lifecycle EOL</strong>
+              <span class="cell-sub">${eolOverdue} device${eolOverdue > 1 ? 's' : ''} past their lifecycle — replacement due.</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/assets?lifecycle=overdue">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            </div>
+          </div>` : ''}
+        </div>
+
+        <!-- Asset distribution by location -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head" style="border-bottom:none;padding-bottom:0;align-items:flex-start">
+            <div><h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Asset Distribution</h3>
+              <div class="cell-sub" style="margin-top:2px">By primary location</div></div>
+          </div>
+          <div class="donut-wrap">${donut}</div>
+          <div style="padding-bottom:12px">
+            ${(d.locationDistribution || []).slice(0, 4).map((x, i) => `
+            <div class="loc-legend">
+              <span class="dot" style="background:${locColors[i]}"></span>
+              ${esc(x.location)}
+              <strong>${x.count}</strong>
+            </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- Expiring licenses -->
+        <div class="card">
+          <div class="card-head"><h3>Expiring Licenses</h3></div>
+          ${d.alerts.expiringLicenses.length === 0 ? '<div class="table-empty">No licenses expiring soon.</div>' :
+            d.alerts.expiringLicenses.slice(0, 4).map((l) => `
+            <div class="exp-item">
+              ${iconChip('vpn_key', l.daysLeft <= 14 ? 'amber' : 'indigo')}
+              <div>
+                <strong>${esc(l.softwareName)}</strong>
+                <span class="cell-sub">${l.totalSeats} Seats${l.vendor ? ' • ' + esc(l.vendor) : ''}</span>
+                <div class="exp-days ${l.daysLeft <= 7 ? 'urgent' : ''}">Exp. in ${l.daysLeft} Days</div>
+              </div>
+            </div>`).join('')}
+        </div>
       </div>
     </div>`;
 
   bindView(el, (e) => {
+    const row = e.target.closest('tr[data-open-asset]');
+    if (row) { showAssetDetail(row.dataset.openAsset); return; }
     const b = e.target.closest('[data-go]');
     if (b) location.hash = b.dataset.go;
   });
@@ -137,13 +244,23 @@ Views.assets = async function (el, params = {}) {
   const q = new URLSearchParams();
   if (params.status) q.set('status', params.status);
   if (params.category) q.set('category', params.category);
+  if (params.location) q.set('location', params.location);
   if (params.search) q.set('search', params.search);
   q.set('limit', '2000');
-  const [{ items, total }, stats] = await Promise.all([
+  let [{ items, total }, stats] = await Promise.all([
     api('/assets?' + q.toString()),
     api('/dashboard/stats'),
   ]);
   const a = stats.assets;
+
+  // Lifecycle filter is computed client-side from purchase date + settings.
+  if (params.lifecycle === 'overdue') {
+    items = items.filter((x) => lifecycleInfo(x).overdue && x.status !== 'Scrap');
+    total = items.length;
+  } else if (params.lifecycle === 'soon') {
+    items = items.filter((x) => { const l = lifecycleInfo(x); return !l.overdue && l.pct != null && l.pct >= 90 && x.status !== 'Scrap'; });
+    total = items.length;
+  }
 
   // Client-side paging over the (already filtered) result set.
   const PAGE_SIZE = 50;
@@ -155,6 +272,8 @@ Views.assets = async function (el, params = {}) {
   const chips = [];
   if (params.status) chips.push({ key: 'status', label: `Status: ${params.status}` });
   if (params.category) chips.push({ key: 'category', label: `Category: ${params.category}` });
+  if (params.location) chips.push({ key: 'location', label: `Location: ${params.location}` });
+  if (params.lifecycle) chips.push({ key: 'lifecycle', label: `Lifecycle: ${params.lifecycle === 'overdue' ? 'Past EOL' : 'EOL soon'}` });
   if (params.search) chips.push({ key: 'search', label: `Search: ${params.search}` });
 
   el.innerHTML = `
@@ -194,6 +313,10 @@ Views.assets = async function (el, params = {}) {
         <option value="">All categories</option>
         ${CATS.map((c) => `<option ${params.category === c ? 'selected' : ''}>${c}</option>`).join('')}
       </select>
+      <select id="asset-location">
+        <option value="">All locations</option>
+        ${(AppConfig.locations || []).map((l) => `<option ${params.location === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+      </select>
     </div>
     ${chips.length ? `<div class="filter-chips"><strong>Active Filters:</strong>
       ${chips.map((c) => `<span class="chip">${esc(c.label)} <button data-clear="${c.key}"><span class="ms">close</span></button></span>`).join('')}
@@ -205,10 +328,10 @@ Views.assets = async function (el, params = {}) {
       <thead><tr>
         <th style="width:34px"><input type="checkbox" id="sel-all" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}></th>
         <th style="width:44px">QR</th><th>Asset ID</th><th>Brand &amp; Model</th><th>Serial No</th>
-        <th>MAC Address</th><th>Status</th><th style="text-align:right">Actions</th>
+        <th>MAC Address</th><th>Location</th><th>Status</th><th style="text-align:right">Actions</th>
       </tr></thead>
       <tbody>
-        ${pageItems.length === 0 ? '<tr><td colspan="8" class="table-empty">No assets found.</td></tr>' :
+        ${pageItems.length === 0 ? '<tr><td colspan="9" class="table-empty">No assets found.</td></tr>' :
           pageItems.map((x) => {
             const specsBits = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : '';
             return `
@@ -220,6 +343,7 @@ Views.assets = async function (el, params = {}) {
                 <div class="cell-sub">${esc(x.category)}${specsBits ? ' • ' + esc(specsBits) : ''}</div></td>
               <td class="mono">${esc(x.serialNumber)}</td>
               <td class="mono">${x.macEthernet || x.macWifi ? esc(x.macEthernet || x.macWifi) : '<span class="cell-sub">N/A</span>'}</td>
+              <td class="cell-sub">${esc(x.location || '—')}</td>
               <td>${badge(x.status)}${(() => { const l = lifecycleInfo(x);
                 return l.overdue && x.status !== 'Scrap' ? ' <span class="pill pill-rose" title="Past its lifecycle — replacement due">EOL</span>'
                   : (l.pct != null && l.pct >= 90 && x.status !== 'Scrap' ? ' <span class="pill pill-amber" title="Approaching end of lifecycle">EOL soon</span>' : ''); })()}</td>
@@ -340,12 +464,13 @@ Views.assets = async function (el, params = {}) {
   $('#asset-search', el).addEventListener('change', (e) => rerender({ search: e.target.value, page: 1 }));
   $('#asset-status', el).addEventListener('change', (e) => rerender({ status: e.target.value, page: 1 }));
   $('#asset-category', el).addEventListener('change', (e) => rerender({ category: e.target.value, page: 1 }));
+  $('#asset-location', el).addEventListener('change', (e) => rerender({ location: e.target.value, page: 1 }));
   if (canEdit) {
     $('#asset-new', el).addEventListener('click', () => assetForm(null, () => rerender({})));
     $('#asset-export', el).addEventListener('click', () => exportCsv(items));
   }
   const clearAll = $('#clear-all', el);
-  if (clearAll) clearAll.addEventListener('click', (e) => { e.preventDefault(); rerender({ status: '', category: '', search: '', page: 1 }); });
+  if (clearAll) clearAll.addEventListener('click', (e) => { e.preventDefault(); rerender({ status: '', category: '', location: '', lifecycle: '', search: '', page: 1 }); });
 
   bindView(el, async (e) => {
     if (e.target.closest('input')) return; // checkboxes have their own handlers
@@ -436,6 +561,15 @@ async function assetForm(asset, done) {
           <select id="af-cat">${CATS.map((c) => `<option ${state.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
         <div class="form-field"><label>Purchase date</label>
           <input type="date" name="purchaseDate" value="${asset && asset.purchaseDate ? String(asset.purchaseDate).slice(0, 10) : ''}"></div>
+        <div class="form-field"><label>Location</label>
+          <select name="location">
+            <option value="">— No location —</option>
+            ${(AppConfig.locations || []).map((l) => {
+              const sel = asset ? asset.location === l : AppConfig.defaultLocation === l;
+              return `<option ${sel ? 'selected' : ''}>${esc(l)}</option>`;
+            }).join('')}
+          </select></div>
+        <div class="form-field"></div>
         <div class="form-field"><label>Brand * <span class="ob-hint">(from Product Catalog)</span></label>
           <div id="af-brand-slot"></div></div>
         <div class="form-field"><label>Model *</label>
@@ -550,6 +684,7 @@ async function assetForm(asset, done) {
           model: state.model.trim(),
           category: state.category,
           purchaseDate: f.purchaseDate.value || null,
+          location: f.location.value || null,
           macEthernet: take('macEthernet'),
           macWifi: take('macWifi'),
           specs: { cpu: take('cpu'), ram: take('ram'), storage: take('storage'), os: take('os') },
@@ -623,6 +758,7 @@ async function showAssetDetail(id, onChange) {
         <div><span class="cell-sub">Assigned to</span><div>${x.currentEmployee ? esc(x.currentEmployee.fullName) : '—'}</div></div>
         <div><span class="cell-sub">Serial</span><div class="mono">${esc(x.serialNumber)}</div></div>
         <div><span class="cell-sub">Category</span><div>${esc(x.category)}</div></div>
+        <div><span class="cell-sub">Location</span><div>${esc(x.location || '—')}</div></div>
         <div><span class="cell-sub">MAC Ethernet</span><div class="mono">${esc(x.macEthernet || 'N/A')}</div></div>
         <div><span class="cell-sub">MAC Wi-Fi</span><div class="mono">${esc(x.macWifi || 'N/A')}</div></div>
         <div><span class="cell-sub">Specs</span><div>${esc([s.cpu, s.ram, s.storage, s.os].filter(Boolean).join(' • ') || '—')}</div></div>
@@ -1742,12 +1878,66 @@ Views.catalog = async function (el) {
     });
   }
 
+  /* ---- Office Locations (stored in settings, drives asset form dropdown) ---- */
+  const locData = await api('/catalog/locations').catch(() => ({ locations: [], defaultLocation: null }));
+  el.insertAdjacentHTML('beforeend', `
+    <div class="card" style="margin-top:4px">
+      <div class="card-head">
+        <h3>Office Locations (${locData.locations.length})</h3>
+        ${canEdit ? '<button class="btn btn-primary btn-sm" id="loc-add"><span class="ms">add_location_alt</span> Add Location</button>' : ''}
+      </div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Location</th><th>Default</th><th style="text-align:right"></th></tr></thead>
+        <tbody>
+          ${locData.locations.map((l) => `
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:10px"><span class="ms" style="color:var(--on-surface-variant)">location_on</span>
+              <span class="cell-title">${esc(l)}</span></div></td>
+            <td>${locData.defaultLocation === l
+              ? '<span class="pill pill-indigo">Default</span>'
+              : (canEdit ? `<button class="btn btn-outline btn-sm" data-setdef="${esc(l)}">Set default</button>` : '—')}</td>
+            <td class="actions">${canEdit ? `<button class="btn btn-outline btn-sm" data-delloc="${esc(l)}">Delete</button>` : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="table-foot">New assets default to the location marked as Default; each asset's location can be changed on its form.</div>
+    </div>`);
+
+  if (canEdit) {
+    $('#loc-add', el).addEventListener('click', () => formModal({
+      title: 'Add office location',
+      fields: [{ name: 'name', label: 'Location name *', required: true, full: true, placeholder: 'e.g. Ankara Branch' }],
+      submitLabel: 'Add location',
+      async onSubmit(d2) {
+        const r = await api('/catalog/locations', { method: 'POST', body: { name: d2.name } });
+        AppConfig.locations = r.locations;
+        toast(`Location "${d2.name}" added`, 'success');
+        Views.catalog(el);
+      },
+    }));
+  }
+
   bindView(el, async (e) => {
-    const b = e.target.closest('button[data-del]'); if (!b || !canEdit) return;
+    const b = e.target.closest('button'); if (!b || !canEdit) return;
     try {
-      await api('/catalog/' + b.dataset.del, { method: 'DELETE' });
-      toast('Catalog entry removed', 'success');
-      Views.catalog(el);
+      if (b.dataset.del) {
+        await api('/catalog/' + b.dataset.del, { method: 'DELETE' });
+        toast('Catalog entry removed', 'success');
+        Views.catalog(el);
+      } else if (b.dataset.setdef) {
+        const r = await api('/catalog/locations/default', { method: 'PUT', body: { name: b.dataset.setdef } });
+        AppConfig.defaultLocation = r.defaultLocation;
+        toast(`Default location set to ${b.dataset.setdef}`, 'success');
+        Views.catalog(el);
+      } else if (b.dataset.delloc) {
+        confirmModal(`Delete location "${b.dataset.delloc}"? Assets keep their stored location text.`, async () => {
+          const r = await api('/catalog/locations/' + encodeURIComponent(b.dataset.delloc), { method: 'DELETE' });
+          AppConfig.locations = r.locations;
+          AppConfig.defaultLocation = r.defaultLocation;
+          toast('Location deleted', 'success');
+          Views.catalog(el);
+        });
+      }
     } catch (err) { toast(err.message, 'error'); }
   });
 };
@@ -1912,11 +2102,15 @@ const CUSTOM_SOURCES = {
       ['ram', 'RAM', (x) => (x.specs && x.specs.ram) || ''],
       ['storage', 'Storage', (x) => (x.specs && x.specs.storage) || ''],
       ['os', 'OS', (x) => (x.specs && x.specs.os) || ''],
+      ['location', 'Location', (x) => x.location || ''],
       ['eol', 'Lifecycle EOL', (x) => { const l = lifecycleInfo(x); return l.eol ? fmtDate(l.eol) : ''; }],
       ['lifecycle', 'Lifecycle State', (x) => { const l = lifecycleInfo(x);
         return l.pct == null ? '' : (l.overdue ? 'OVERDUE' : Math.min(l.pct, 100) + '%'); }],
     ],
     filters: [
+      { key: 'location', label: 'Location', type: 'select',
+        get options() { return ['', ...(AppConfig.locations || [])]; },
+        apply: (x, v) => x.location === v },
       { key: 'lifecycle', label: 'Lifecycle', type: 'select',
         options: [{ value: '', label: 'Lifecycle: all' }, { value: 'overdue', label: 'Past EOL (replace)' }, { value: 'ok', label: 'Within lifecycle' }],
         apply: (x, v) => (v === 'overdue' ? lifecycleInfo(x).overdue : !lifecycleInfo(x).overdue) },

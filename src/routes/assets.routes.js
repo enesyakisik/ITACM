@@ -5,7 +5,7 @@ const { assetService } = require('../services');
 
 router.use(authenticate);
 
-/** GET /api/assets — Hardware Inventory table (all roles). ?status=&category=&search=&limit=&cursor= */
+/** GET /api/assets — Hardware Inventory table (all roles). ?status=&category=&search=&location=&limit=&cursor= */
 router.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, data: await assetService.listAssets(req.query) });
 }));

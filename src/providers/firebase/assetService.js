@@ -18,7 +18,7 @@ function buildQrCodeString(assetTag) {
 function sanitizeAssetPayload(body, { partial = false } = {}) {
   const {
     assetTag, serialNumber, brand, model, category,
-    macEthernet, macWifi, specs, status, warrantyEndDate,
+    macEthernet, macWifi, specs, status, warrantyEndDate, location,
   } = body;
 
   if (!partial) {
@@ -42,6 +42,7 @@ function sanitizeAssetPayload(body, { partial = false } = {}) {
   if (category !== undefined) data.category = category;
   if (macEthernet !== undefined) data.macEthernet = macEthernet;
   if (macWifi !== undefined) data.macWifi = macWifi;
+  if (location !== undefined) data.location = location ? String(location).trim() : null;
   if (status !== undefined) data.status = status;
   if (warrantyEndDate !== undefined) {
     data.warrantyEndDate = warrantyEndDate ? Timestamp.fromDate(new Date(warrantyEndDate)) : null;
@@ -125,12 +126,13 @@ async function updateAsset(assetId, body) {
 }
 
 /** List with the filters the Hardware Inventory screen exposes (status tabs, category, employee, search). */
-async function listAssets({ status, category, employeeId, search, limit = 100, cursor } = {}) {
+async function listAssets({ status, category, employeeId, search, location, limit = 100, cursor } = {}) {
   let q = db.collection(COLLECTIONS.ASSETS);
 
   if (status) q = q.where('status', '==', status);
   if (category) q = q.where('category', '==', category);
   if (employeeId) q = q.where('currentEmployee.id', '==', employeeId);
+  if (location) q = q.where('location', '==', location);
   const totalSnap = await q.count().get();
   q = q.orderBy('assetTag').limit(Math.min(Number(limit) || 100, 2000));
   if (cursor) q = q.startAfter(cursor);

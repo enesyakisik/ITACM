@@ -27,8 +27,11 @@ function renderNav() {
 }
 
 async function navigate() {
-  const hash = ROUTES[location.hash] ? location.hash : '#/dashboard';
+  // Support query params in the hash, e.g. #/assets?lifecycle=overdue
+  const [rawHash, rawQuery] = location.hash.split('?');
+  const hash = ROUTES[rawHash] ? rawHash : '#/dashboard';
   const route = ROUTES[hash];
+  const params = Object.fromEntries(new URLSearchParams(rawQuery || ''));
   if (route.perm && !Auth.can(route.perm)) { location.hash = '#/dashboard'; return; }
 
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === hash));
@@ -37,7 +40,7 @@ async function navigate() {
   if (view._viewAbort) view._viewAbort.abort(); // drop stale delegated listeners
   view.innerHTML = '<div class="table-empty">Loading…</div>';
   try {
-    await Views[route.view](view);
+    await Views[route.view](view, params);
   } catch (err) {
     view.innerHTML = `<div class="card card-pad"><div class="form-error">${esc(err.message)}</div></div>`;
   }
