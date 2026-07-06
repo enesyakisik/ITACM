@@ -1,56 +1,80 @@
 #!/usr/bin/env node
 /**
- * Interactive setup wizard — lets the user CHOOSE their backend and writes a
- * ready-to-run local .env file. On hosted platforms, copy the same keys into
- * the platform Environment Variables / Secrets UI instead of committing .env.
+ * ITACM turnkey setup wizard.
  *
  *   npm run setup
+ *
+ * Choose PostgreSQL (Docker) or Firebase. The Firebase path is fully guided:
+ * it installs/uses the Firebase CLI, signs you in, creates (or picks) a
+ * project, creates the web app and Firestore database, deploys the security
+ * rules, generates the Admin service-account credential, and writes a
+ * ready-to-run .env — plus the exact three values to paste into Vercel.
+ * No hand-editing of JSON or base64 required.
  */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const readline = require('readline');
+const { spawnSync } = require('child_process');
+
+const ROOT = path.join(__dirname, '..');
+const ENV_PATH = path.join(ROOT, '.env');
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
+const ask = (q) => new Promise((r) => rl.question(q, (a) => r(a.trim())));
+const askDefault = async (q, d) => (await ask(`${q} [${d}]: `)) || d;
 
-const ENV_PATH = path.join(__dirname, '..', '.env');
+const c = { g: (s) => `\x1b[32m${s}\x1b[0m`, y: (s) => `\x1b[33m${s}\x1b[0m`, r: (s) => `\x1b[31m${s}\x1b[0m`, b: (s) => `\x1b[1m${s}\x1b[0m`, d: (s) => `\x1b[2m${s}\x1b[0m` };
+
+/** Run a command, inheriting stdio (interactive). Returns exit code. */
+function run(cmd, args, opts = {}) {
+  const res = spawnSync(cmd, args, { stdio: 'inherit', cwd: ROOT, ...opts });
+  return res.status;
+}
+/** Run a command and capture stdout (non-interactive). */
+function capture(cmd, args, opts = {}) {
+  const res = spawnSync(cmd, args, { encoding: 'utf8', cwd: ROOT, ...opts });
+  return { code: res.status, out: (res.stdout || '').trim(), err: (res.stderr || '').trim() };
+}
+function has(cmd) {
+  const res = spawnSync(process.platform === 'win32' ? 'where' : 'which', [cmd], { encoding: 'utf8' });
+  return res.status === 0;
+}
+// Firebase CLI: prefer a global install, else use npx (auto-downloads).
+const FB = has('firebase') ? ['firebase'] : ['npx', '--yes', 'firebase-tools@latest'];
+const fb = (args, opts) => run(FB[0], [...FB.slice(1), ...args], opts);
+const fbCap = (args, opts) => capture(FB[0], [...FB.slice(1), ...args], opts);
+
+function writeEnv(content) {
+  fs.writeFileSync(ENV_PATH, content, { mode: 0o600 });
+}
 
 async function main() {
   console.log('');
-  console.log('  ITACM — IT Asset Control Pro : Setup Wizard');
+  console.log(c.b('  ITACM — IT Asset Control Pro : Setup Wizard'));
   console.log('  ------------------------------------------------');
-  console.log('  1) Self-hosted  — PostgreSQL via Docker Compose (recommended to start)');
-  console.log('  2) Firebase     — managed Firebase Auth + Firestore');
+  console.log('  1) ' + c.b('Firebase') + '   — managed, deploys to Vercel (fully automated here)');
+  console.log('  2) ' + c.b('PostgreSQL') + ' — self-hosted via Docker Compose');
   console.log('');
 
   if (fs.existsSync(ENV_PATH)) {
-    const overwrite = await ask('.env already exists. Overwrite? (y/N) ');
-    if (overwrite.toLowerCase() !== 'y') {
-      console.log('Aborted — existing .env kept.');
-      rl.close();
-      return;
-    }
+    const ow = await ask('.env already exists. Overwrite? (y/N) ');
+    if (ow.toLowerCase() !== 'y') { console.log('Aborted — existing .env kept.'); return rl.close(); }
   }
 
-  const choice = await ask('Choose your backend [1/2]: ');
-
-  if (choice === '2') {
-    await setupFirebase();
-  } else {
-    await setupPostgres();
-  }
+  const choice = await askDefault('Choose your backend (1=Firebase, 2=PostgreSQL)', '1');
+  if (choice === '2') await setupPostgres();
+  else await setupFirebase();
   rl.close();
 }
 
+/* =========================== PostgreSQL =========================== */
 async function setupPostgres() {
-  console.log('\n-- Self-hosted (PostgreSQL) --\n');
-
-  const adminEmail = (await ask('Admin email [admin@example.com]: ')) || 'admin@example.com';
-  const adminUsername = (await ask('Admin display name [IT Admin]: ')) || 'IT Admin';
+  console.log('\n' + c.b('-- Self-hosted (PostgreSQL) --') + '\n');
+  const adminEmail = await askDefault('Admin email', 'admin@example.com');
+  const adminUsername = await askDefault('Admin display name', 'IT Admin');
   const adminPassword = await ask('Admin password (leave EMPTY to auto-generate & print in logs): ');
-  const corsOrigins = (await ask('Frontend origin(s), comma separated [http://localhost:5173]: ')) || 'http://localhost:5173';
-
+  const corsOrigins = await askDefault('Frontend origin(s), comma separated', 'http://localhost:5173');
   const jwtSecret = crypto.randomBytes(32).toString('hex');
   const dbPassword = crypto.randomBytes(16).toString('base64url');
 
@@ -72,77 +96,195 @@ ADMIN_EMAIL=${adminEmail}
 ADMIN_USERNAME=${adminUsername}
 ADMIN_PASSWORD=${adminPassword}
 `);
-
-  console.log('\n✔ .env written (JWT secret & DB password were generated for you).');
+  console.log(c.g('\n✔ .env written (JWT secret & DB password generated).'));
   console.log('\nNext steps:');
-  console.log('  docker compose up -d');
-  console.log('  docker compose logs api      # first-run admin credentials appear here');
-  console.log('  curl http://localhost:8000/api/health');
-  console.log('\nDeploying to Vercel/Railway/Render? Add these values as platform');
-  console.log('Environment Variables instead of committing .env: DATA_BACKEND,');
-  console.log('DATABASE_URL, PGSSL, JWT_SECRET, ADMIN_EMAIL, ADMIN_USERNAME, ADMIN_PASSWORD.');
+  console.log('  ' + c.b('docker compose up -d'));
+  console.log('  docker compose logs api      ' + c.d('# first-run admin credentials appear here'));
+  console.log('  open http://localhost:8000');
 }
 
+/* ============================ Firebase ============================ */
 async function setupFirebase() {
-  console.log('\n-- Firebase (managed) --\n');
-  console.log('Prerequisites (Firebase Console):');
-  console.log('  1. Create a project  → https://console.firebase.google.com');
-  console.log('  2. Authentication → Sign-in method → enable Email/Password');
-  console.log('  3. Firestore Database → Create database (production mode)');
-  console.log('  4. Project settings → Service accounts → Generate new private key');
-  console.log('');
-  console.log('SECURITY: never commit that JSON file. This wizard converts it to a');
-  console.log('base64 env var and does NOT copy the file into the repo.\n');
+  console.log('\n' + c.b('-- Firebase (managed) --'));
+  console.log(c.d('This wizard drives the Firebase CLI for you. A browser window may open for login.\n'));
 
-  const keyPath = await ask('Path to the downloaded service account JSON: ');
-  let b64 = '';
-  try {
-    const raw = fs.readFileSync(keyPath.replace(/^~/, process.env.HOME), 'utf8');
-    JSON.parse(raw); // validate
-    b64 = Buffer.from(raw).toString('base64');
-  } catch (err) {
-    console.error(`\n✖ Could not read/parse the key file: ${err.message}`);
-    console.error('Re-run `npm run setup` when you have the file.');
+  // 1) CLI present?
+  if (!has('firebase') && !has('npx')) {
+    console.log(c.r('Neither the Firebase CLI nor npx was found. Install Node.js (includes npx) and retry.'));
     return;
   }
+  console.log('Using Firebase CLI via: ' + c.b(FB.join(' ')) + (has('firebase') ? '' : c.d('  (auto-downloaded on first use)')));
 
-  const corsOrigins = (await ask('Frontend origin(s), comma separated [http://localhost:5173]: ')) || 'http://localhost:5173';
-  const firebaseWebConfig = await ask('Firebase web app config JSON (optional, required for built-in UI login): ');
-  if (firebaseWebConfig) {
-    try {
-      JSON.parse(firebaseWebConfig);
-    } catch (err) {
-      console.error(`\n✖ Firebase web app config is not valid JSON: ${err.message}`);
-      console.error('Re-run `npm run setup` and paste the config as one-line JSON.');
+  // 2) Login
+  const who = fbCap(['login:list']);
+  if (who.code !== 0 || /No authorized accounts|No accounts/i.test(who.out + who.err)) {
+    console.log('\n' + c.y('Step 1/6 — Sign in to Google/Firebase (a browser will open)…'));
+    if (fb(['login']) !== 0) { console.log(c.r('Firebase login failed. Re-run `npm run setup`.')); return; }
+  } else {
+    console.log(c.g('\nStep 1/6 — Already signed in to Firebase. ✔'));
+  }
+
+  // 3) Pick or create a project
+  console.log('\n' + c.y('Step 2/6 — Choose a Firebase project…'));
+  fb(['projects:list']);
+  let projectId = await ask('\nEnter an EXISTING project ID, or a NEW id to create (lowercase, e.g. acme-itacm): ');
+  if (!projectId) { console.log(c.r('A project id is required.')); return; }
+
+  const exists = fbCap(['projects:list']).out.includes(projectId);
+  if (!exists) {
+    const displayName = await askDefault('New project display name', 'ITACM');
+    console.log(c.d(`Creating project ${projectId}…`));
+    if (fb(['projects:create', projectId, '--display-name', displayName]) !== 0) {
+      console.log(c.r('Could not create the project (id may be taken or billing required). Try another id or create it in the console.'));
       return;
     }
   }
 
+  // 4) Web app + SDK config (public web config for the built-in UI)
+  console.log('\n' + c.y('Step 3/6 — Creating the Web App and fetching its config…'));
+  fbCap(['apps:create', 'WEB', 'ITACM Web', '--project', projectId]); // ignore "already exists"
+  let firebaseWebConfig = '';
+  const sdk = fbCap(['apps:sdkconfig', 'WEB', '--project', projectId, '--json']);
+  try {
+    const parsed = JSON.parse(sdk.out);
+    const cfg = (parsed.result && (parsed.result.sdkConfig || parsed.result)) || parsed.sdkConfig || parsed;
+    const pick = (o) => ({ apiKey: o.apiKey, authDomain: o.authDomain, projectId: o.projectId, storageBucket: o.storageBucket, messagingSenderId: o.messagingSenderId, appId: o.appId });
+    firebaseWebConfig = JSON.stringify(pick(cfg));
+    if (!JSON.parse(firebaseWebConfig).apiKey) throw new Error('no apiKey');
+    console.log(c.g('  ✔ Web config fetched.'));
+  } catch {
+    console.log(c.y('  Could not auto-parse the web config. Paste it from Firebase Console → Project settings → Your apps → Web app → Config.'));
+    firebaseWebConfig = await ask('  FIREBASE_WEB_CONFIG (one-line JSON): ');
+  }
+
+  // 5) Firestore database + rules
+  console.log('\n' + c.y('Step 4/6 — Creating Firestore database…'));
+  const loc = await askDefault('Firestore location', 'eur3');
+  const created = fbCap(['firestore:databases:create', '(default)', '--location', loc, '--project', projectId]);
+  if (created.code !== 0 && !/already exists|ALREADY_EXISTS/i.test(created.out + created.err)) {
+    console.log(c.d('  (If this failed, create Firestore once in the console, then re-run — the rest still applies.)'));
+  } else {
+    console.log(c.g('  ✔ Firestore ready.'));
+  }
+  console.log(c.d('  Deploying security rules & indexes…'));
+  ensureFirebaserc(projectId);
+  fb(['deploy', '--only', 'firestore:rules,firestore:indexes', '--project', projectId]);
+
+  // 6) Enable Email/Password sign-in + admin service-account credential
+  console.log('\n' + c.y('Step 5/6 — Admin credential (service account)…'));
+  const b64 = await obtainServiceAccountBase64(projectId);
+  if (!b64) { console.log(c.r('No service-account credential — cannot continue.')); return; }
+
+  await tryEnableEmailPassword(projectId, b64);
+
+  // 7) Write .env
+  console.log('\n' + c.y('Step 6/6 — Writing configuration…'));
+  const corsOrigins = await askDefault('Frontend origin(s), comma separated (blank = same-origin)', '');
   writeEnv(`# Generated by scripts/setup.js — ${new Date().toISOString()}
 DATA_BACKEND=firebase
 PORT=8000
-CORS_ORIGINS=${corsOrigins}
-
-FIREBASE_SERVICE_ACCOUNT_BASE64=${b64}
-${firebaseWebConfig ? `FIREBASE_WEB_CONFIG=${firebaseWebConfig}\n` : ''}
+${corsOrigins ? `CORS_ORIGINS=${corsOrigins}\n` : ''}FIREBASE_SERVICE_ACCOUNT_BASE64=${b64}
+FIREBASE_WEB_CONFIG=${firebaseWebConfig}
 `);
+  console.log(c.g('\n✔ .env written for Firebase mode.'));
 
-  console.log('\n✔ .env written with the base64-encoded service account.');
-  console.log('\nRecommended: delete or move the raw key file somewhere safe OUTSIDE the repo.');
-  console.log('\nNext steps:');
-  console.log('  firebase deploy --only firestore:rules,firestore:indexes');
-  console.log('  npm start');
-  console.log('  node scripts/setUserRole.js --create admin@company.com <password> "IT Admin" Admin');
-  console.log('\nDeploying to Vercel/Railway/Render? Add DATA_BACKEND,');
-  console.log('FIREBASE_SERVICE_ACCOUNT_BASE64 and FIREBASE_WEB_CONFIG as platform');
-  console.log('Environment Variables / Secrets (Production scope on Vercel).');
+  // Vercel handoff
+  const vercelFile = path.join(ROOT, 'vercel-env.txt');
+  fs.writeFileSync(vercelFile,
+    `DATA_BACKEND=firebase\nFIREBASE_SERVICE_ACCOUNT_BASE64=${b64}\nFIREBASE_WEB_CONFIG=${firebaseWebConfig}\n`, { mode: 0o600 });
+
+  console.log('\n' + c.b('Run locally:') + '  npm start   → open http://localhost:8000  (first launch shows onboarding)');
+  console.log('\n' + c.b('Deploy to Vercel:'));
+  if (has('vercel')) {
+    const push = await ask('  Push these env vars to Vercel now with the Vercel CLI? (y/N) ');
+    if (push.toLowerCase() === 'y') {
+      for (const [k, v] of [['DATA_BACKEND', 'firebase'], ['FIREBASE_SERVICE_ACCOUNT_BASE64', b64], ['FIREBASE_WEB_CONFIG', firebaseWebConfig]]) {
+        for (const envName of ['production', 'preview', 'development']) {
+          spawnSync('vercel', ['env', 'add', k, envName], { input: v + '\n', cwd: ROOT, stdio: ['pipe', 'inherit', 'inherit'] });
+        }
+      }
+      console.log(c.g('  ✔ Pushed. Now run: vercel --prod'));
+    }
+  } else {
+    console.log('  1. Import the repo at https://vercel.com/new');
+    console.log('  2. In Project → Settings → Environment Variables, add the three values from ' + c.b('vercel-env.txt'));
+    console.log('     (' + c.d('DATA_BACKEND, FIREBASE_SERVICE_ACCOUNT_BASE64, FIREBASE_WEB_CONFIG') + ')');
+    console.log('  3. Deploy. The first visit shows the onboarding wizard to create your Owner account.');
+  }
+  console.log('\n' + c.y('Note:') + ' vercel-env.txt contains a secret — it is git-ignored; delete it once configured.');
 }
 
-function writeEnv(content) {
-  fs.writeFileSync(ENV_PATH, content, { mode: 0o600 });
+/** Write .firebaserc so `firebase deploy` targets the chosen project. */
+function ensureFirebaserc(projectId) {
+  fs.writeFileSync(path.join(ROOT, '.firebaserc'),
+    JSON.stringify({ projects: { default: projectId } }, null, 2) + '\n');
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+/**
+ * Get the Admin service-account JSON as base64. Prefers gcloud automation;
+ * otherwise guides a single one-click download from the console.
+ */
+async function obtainServiceAccountBase64(projectId) {
+  if (has('gcloud')) {
+    const auto = await ask('  Auto-create the Admin key with gcloud? (Y/n) ');
+    if (auto.toLowerCase() !== 'n') {
+      const list = capture('gcloud', ['iam', 'service-accounts', 'list', '--project', projectId, '--format=value(email)']);
+      const sa = (list.out.split('\n').find((e) => e.includes('firebase-adminsdk')) || list.out.split('\n')[0] || '').trim();
+      if (sa) {
+        const keyFile = path.join(require('os').tmpdir(), `itacm-sa-${Date.now()}.json`);
+        const made = run('gcloud', ['iam', 'service-accounts', 'keys', 'create', keyFile, '--iam-account', sa, '--project', projectId]);
+        if (made === 0 && fs.existsSync(keyFile)) {
+          const raw = fs.readFileSync(keyFile);
+          fs.unlinkSync(keyFile); // never leave the key on disk
+          console.log(c.g('  ✔ Service-account key created and encoded (temp file removed).'));
+          return Buffer.from(raw).toString('base64');
+        }
+      }
+      console.log(c.y('  gcloud automation did not complete — falling back to manual download.'));
+    }
+  }
+  console.log('\n  ' + c.b('Download the Admin key (one step):'));
+  console.log('  Open: ' + c.b(`https://console.firebase.google.com/project/${projectId}/settings/serviceaccounts/adminsdk`));
+  console.log('  Click ' + c.b('“Generate new private key”') + ' → save the JSON file.');
+  const keyPath = await ask('  Path to the downloaded JSON file: ');
+  try {
+    const raw = fs.readFileSync(keyPath.replace(/^~/, process.env.HOME || '~'), 'utf8');
+    JSON.parse(raw);
+    console.log(c.g('  ✔ Key read and encoded (the file stays where you saved it — keep it private).'));
+    return Buffer.from(raw).toString('base64');
+  } catch (err) {
+    console.log(c.r('  Could not read/parse the key file: ' + err.message));
+    return '';
+  }
+}
+
+/** Best-effort: enable the Email/Password provider via the Identity Toolkit API. */
+async function tryEnableEmailPassword(projectId, b64) {
+  try {
+    const key = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    // Mint an access token from the service account (JWT bearer grant).
+    const jwt = require('jsonwebtoken');
+    const now = Math.floor(Date.now() / 1000);
+    const assertion = jwt.sign(
+      { iss: key.client_email, scope: 'https://www.googleapis.com/auth/cloud-platform', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 },
+      key.private_key, { algorithm: 'RS256' }
+    );
+    const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${assertion}`,
+    });
+    const tok = await tokRes.json();
+    if (!tok.access_token) throw new Error('no access token');
+    const up = await fetch(`https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired`, {
+      method: 'PATCH', headers: { Authorization: 'Bearer ' + tok.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signIn: { email: { enabled: true, passwordRequired: true } } }),
+    });
+    if (up.ok) { console.log(c.g('  ✔ Email/Password sign-in enabled automatically.')); return; }
+    throw new Error('config update ' + up.status);
+  } catch {
+    console.log(c.y('  Could not auto-enable Email/Password sign-in.'));
+    console.log('  Enable it once here: ' + c.b(`https://console.firebase.google.com/project/${projectId}/authentication/providers`) + '  → Email/Password → Enable.');
+  }
+}
+
+main().catch((err) => { console.error(err); rl.close(); process.exit(1); });

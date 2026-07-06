@@ -34,13 +34,24 @@ function resolveCredential() {
   return undefined; // fall back to GOOGLE_APPLICATION_CREDENTIALS / explicit ADC
 }
 
+// Initialize defensively: a malformed credential must NOT crash module load
+// (that would take down every route, including /api/config, and make the UI
+// silently fall back to the postgres default). Instead we record the error
+// and surface it as a clear message on the first API call.
+let initError = null;
 if (!admin.apps.length) {
-  const credential = resolveCredential();
-  admin.initializeApp(credential ? { credential } : undefined);
+  try {
+    const credential = resolveCredential();
+    admin.initializeApp(credential ? { credential } : undefined);
+  } catch (err) {
+    initError = err.message || String(err);
+    console.error('[firebase] initialization failed:', initError);
+    try { admin.initializeApp(); } catch { /* leave uninitialized */ }
+  }
 }
 
 const db = admin.firestore();
-db.settings({ ignoreUndefinedProperties: true });
+try { db.settings({ ignoreUndefinedProperties: true }); } catch { /* already set */ }
 
 const auth = admin.auth();
 const { FieldValue, Timestamp } = admin.firestore;
@@ -65,4 +76,4 @@ const ASSET_STATUS = Object.freeze({
   SCRAP: 'Scrap',
 });
 
-module.exports = { admin, db, auth, FieldValue, Timestamp, COLLECTIONS, ROLES, ASSET_STATUS };
+module.exports = { admin, db, auth, FieldValue, Timestamp, COLLECTIONS, ROLES, ASSET_STATUS, initError };

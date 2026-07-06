@@ -79,11 +79,35 @@ function createApp() {
   app.get('/api/config', async (req, res) => {
     let firebaseWebConfig = null;
     if (config.firebaseWebConfig) {
-      try { firebaseWebConfig = JSON.parse(config.firebaseWebConfig); } catch { /* ignore */ }
+      try { firebaseWebConfig = JSON.parse(config.firebaseWebConfig); }
+      catch { /* invalid web config JSON — surfaced via configError below */ }
     }
-    let settings = { companyName: 'IT Asset Control Pro', companyLogo: null, onboarded: true };
-    try { settings = await require('./providers').settingsService.getSettings(); } catch { /* pre-migration */ }
-    res.json({ success: true, data: { backend: config.backend, firebaseWebConfig, ...settings } });
+
+    // Report the *configured* backend even if the provider can't read yet, so
+    // the UI never silently falls back to postgres. A fresh instance that can
+    // reach its store returns onboarded:false → the onboarding wizard shows.
+    let configError = null;
+    if (config.backend === 'firebase') {
+      try {
+        const { initError } = require('./providers/firebase/firebase');
+        if (initError) configError = 'Firebase Admin credentials are invalid: ' + initError;
+      } catch (err) { configError = 'Firebase init failed: ' + err.message; }
+      if (config.firebaseWebConfig && !firebaseWebConfig) {
+        configError = configError || 'FIREBASE_WEB_CONFIG is not valid JSON';
+      } else if (!config.firebaseWebConfig) {
+        configError = configError || 'FIREBASE_WEB_CONFIG is not set — the web UI cannot sign in';
+      }
+    }
+
+    // Default onboarded=false so a not-yet-set-up instance always reaches the
+    // wizard; only a successful read can flip it to true.
+    let settings = { companyName: 'IT Asset Control Pro', companyLogo: null, onboarded: false };
+    try {
+      settings = await require('./providers').settingsService.getSettings();
+    } catch (err) {
+      configError = configError || (config.backend + ' store unavailable: ' + err.message);
+    }
+    res.json({ success: true, data: { backend: config.backend, firebaseWebConfig, configError, ...settings } });
   });
 
   app.use('/api', require('./routes/setup.routes'));

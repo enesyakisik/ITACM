@@ -18,3 +18,7 @@ ui-debug.log
 # Local tooling / session config
 .claude/
 docker-compose.override.yml
+
+# setup wizard secret handoff
+vercel-env.txt
+.firebaserc

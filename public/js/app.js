@@ -82,12 +82,28 @@ function showLogin() {
   $('#login-mode-note').textContent = AppConfig.backend === 'firebase'
     ? 'Authentication: Firebase (Email/Password)'
     : 'Authentication: local account (PostgreSQL)';
+  showConfigError('#login-error');
+}
+
+// Surface a server configuration problem (bad Firebase creds, missing web
+// config, unreachable store) so the user sees the real issue instead of a
+// silent fallback to the wrong backend.
+function showConfigError(targetSel) {
+  const box = $(targetSel);
+  if (!box) return;
+  if (AppConfig.configError) {
+    box.textContent = '⚠ ' + AppConfig.configError;
+    box.classList.remove('hidden');
+  } else {
+    box.classList.add('hidden');
+  }
 }
 
 function showOnboarding() {
   $('#app').classList.add('hidden');
   $('#login-screen').classList.add('hidden');
   $('#onboarding-screen').classList.remove('hidden');
+  showConfigError('#onboarding-error');
 }
 
 /* ---- onboarding ---- */

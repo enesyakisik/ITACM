@@ -99,54 +99,46 @@ TOKEN=$(curl -s http://localhost:8000/api/auth/login \
 curl http://localhost:8000/api/dashboard/stats -H "Authorization: Bearer $TOKEN"
 ```
 
-## Quick start B — Firebase (managed)
+## Quick start B — Firebase (managed) — one command
 
-### 1. Create the Firebase project
-
-1. Go to [console.firebase.google.com](https://console.firebase.google.com) → **Add project**
-2. **Authentication → Sign-in method** → enable **Email/Password**
-3. **Firestore Database → Create database** (production mode)
-
-### 2. Get a service account key — and keep it safe 🔒
-
-**Project settings → Service accounts → Generate new private key** downloads a
-JSON file. This file is a **full-access credential to your project. Never
-commit it, never put it inside the repo folder.** (`.gitignore` blocks
-`*serviceAccount*.json` as a safety net, but treat it like a password.)
-
-Provide it to the app one of these ways:
-
-| Method | How | Use for |
-|---|---|---|
-| **Base64 env var** (recommended) | `base64 -i key.json \| tr -d '\n'` → `FIREBASE_SERVICE_ACCOUNT_BASE64` | Vercel & any PaaS secret store |
-| Raw JSON env var | paste JSON into `FIREBASE_SERVICE_ACCOUNT_JSON` | CI secrets |
-| File path | `GOOGLE_APPLICATION_CREDENTIALS=/path/outside/repo/key.json` | local development |
-| Explicit ADC | `FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS=true` | Google Cloud runtimes |
-
-The `npm run setup` wizard does the base64 conversion for you and never copies
-the key into the project.
-
-If you use the built-in web UI in Firebase mode, also create a Firebase Web App
-and set `FIREBASE_WEB_CONFIG` to the one-line web config JSON. This value is
-public Firebase client config, not the Admin service account key.
-
-### 3. Configure, deploy rules, create the first Admin
+The setup wizard does **everything** for you: signs you into Firebase, creates
+(or picks) a project, creates the Web App + Firestore, deploys the security
+rules, generates the Admin credential, enables Email/Password sign-in, and
+writes a ready-to-run `.env` — no JSON or base64 by hand.
 
 ```bash
-npm run setup                # choose option 2 (Firebase)
-firebase deploy --only firestore:rules,firestore:indexes
-npm start
-node scripts/setUserRole.js --create admin@company.com 'S3cret!' 'IT Admin' Admin
+npm install
+npm run setup      # choose 1) Firebase, then follow the prompts
+npm start          # → open http://localhost:8000
 ```
 
-Roles are stored in **Firebase Auth custom claims**, so they are
-cryptographically embedded in every ID token. Changing a role revokes the
-user's refresh tokens immediately.
+The first visit shows the **onboarding wizard**: set your company name/logo and
+create the **Owner** account. That's it.
 
-In Firebase mode the **client** signs in with the Firebase Web SDK
-(`signInWithEmailAndPassword`) and sends the resulting ID token as
-`Authorization: Bearer <ID_TOKEN>`. In PostgreSQL mode the client calls
-`POST /api/auth/login` instead. Everything after that is identical.
+> Prerequisites: just Node.js. The wizard uses the Firebase CLI via `npx`
+> (auto-downloaded); a browser opens once for Google sign-in. If `gcloud` is
+> installed it even creates the Admin key automatically — otherwise it opens the
+> one-click "Generate new private key" page and asks for the downloaded file.
+
+**Deploy to Vercel:** the wizard also writes `vercel-env.txt` (git-ignored) with
+the exact three variables to paste into Vercel → Settings → Environment
+Variables — or, if the Vercel CLI is installed, it offers to push them for you.
+Then just `vercel --prod`.
+
+<details><summary>What the three variables are (if you prefer to set them by hand)</summary>
+
+| Variable | Value |
+|---|---|
+| `DATA_BACKEND` | `firebase` |
+| `FIREBASE_SERVICE_ACCOUNT_BASE64` | base64 of the Admin service-account JSON (secret) |
+| `FIREBASE_WEB_CONFIG` | one-line Firebase **web** config JSON (public) |
+
+The service-account file is a full-access credential — never commit it
+(`.gitignore` blocks `*serviceAccount*.json` and `vercel-env.txt` as a safety
+net). Roles live in **Firebase Auth custom claims**; in Firebase mode the client
+signs in with the Firebase Web SDK and the API verifies the ID token, while in
+PostgreSQL mode it calls `POST /api/auth/login`. Everything else is identical.
+</details>
 
 ---
 
