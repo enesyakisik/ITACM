@@ -1,7 +1,7 @@
 {
   "name": "itacm",
   "version": "1.0.0",
-  "description": "IT Asset Control Pro — self-hostable IT asset management backend with switchable PostgreSQL or Firebase backends",
+  "description": "IT Asset Control Pro — self-hosted IT asset management (PostgreSQL + Docker Compose) with a built-in web UI",
   "main": "server.js",
   "engines": {
     "node": ">=20"
@@ -12,13 +12,11 @@
     "setup": "node scripts/setup.js",
     "migrate": "node src/providers/postgres/migrate.js",
     "seed:demo": "node scripts/seed-demo.js",
-    "set-role": "node scripts/setUserRole.js",
-    "lint": "node --check server.js && node --check api/index.js && find src scripts -name '*.js' -exec node --check {} +"
+    "lint": "node --check server.js && find src scripts -name '*.js' -exec node --check {} +"
   },
   "keywords": [
     "it-asset-management",
     "inventory",
-    "firebase",
     "postgres",
     "express",
     "self-hosted"
@@ -30,7 +28,6 @@
     "dejavu-fonts-ttf": "^2.37.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "firebase-admin": "^13.10.0",
     "jsonwebtoken": "^9.0.2",
     "pdfkit": "^0.19.1",
     "pg": "^8.12.0",

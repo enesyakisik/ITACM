@@ -3,7 +3,6 @@
  *
  * `authenticate` extracts `Bearer <TOKEN>` from the Authorization header and
  * delegates verification to the active provider:
- *   - firebase mode: Firebase ID token via admin.auth().verifyIdToken()
  *   - postgres mode: locally-issued JWT (jsonwebtoken) + live role lookup
  *
  * On success `req.user = { uid, email, role }`.

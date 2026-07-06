@@ -3,8 +3,7 @@
  *
  * POST /api/auth/login issues a signed JWT carrying { sub, email, role }.
  * verifyToken() validates the signature AND re-reads the user row so role
- * changes / deletions take effect immediately (parity with Firebase's
- * checkRevoked behaviour).
+ * changes / deletions take effect immediately.
  */
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');

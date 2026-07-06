@@ -65,7 +65,7 @@ function showApp() {
   $('#app').classList.remove('hidden');
   const name = Auth.profile.username || Auth.profile.email;
   $('#user-name').textContent = name;
-  $('#user-role').textContent = Auth.profile.role + ' • ' + (AppConfig.backend === 'firebase' ? 'Firebase' : 'PostgreSQL');
+  $('#user-role').textContent = Auth.profile.role;
   $('#user-avatar').textContent = initials(name);
   $('#topbar-avatar').textContent = initials(name);
   $('#sidebar-new-asset').style.display = Auth.can('canManageAssets') ? '' : 'none';
@@ -79,15 +79,12 @@ function showLogin() {
   $('#onboarding-screen').classList.add('hidden');
   $('#login-screen').classList.remove('hidden');
   applyBranding();
-  $('#login-mode-note').textContent = AppConfig.backend === 'firebase'
-    ? 'Authentication: Firebase (Email/Password)'
-    : 'Authentication: local account (PostgreSQL)';
+  $('#login-mode-note').textContent = 'IT Asset Control Pro';
   showConfigError('#login-error');
 }
 
-// Surface a server configuration problem (bad Firebase creds, missing web
-// config, unreachable store) so the user sees the real issue instead of a
-// silent fallback to the wrong backend.
+// Surface a server configuration problem (e.g. database unreachable) so the
+// user sees the real issue instead of a blank screen.
 function showConfigError(targetSel) {
   const box = $(targetSel);
   if (!box) return;

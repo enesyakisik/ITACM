@@ -1,4 +1,4 @@
-/** Asset service (postgres) — same contract as the Firebase provider. */
+/** Asset service (postgres) — Hardware Inventory backend. */
 const { query, withTransaction } = require('./pool');
 const { mapAsset, mapRows, isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');

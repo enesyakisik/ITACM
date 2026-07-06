@@ -22,10 +22,7 @@ function loginLimiter(req, res, next) {
 }
 
 /**
- * POST /api/auth/login — postgres mode only.
- * Body: { email, password } → { token, expiresIn, user }.
- * In firebase mode this returns 400 with instructions: login happens
- * client-side with the Firebase Web SDK.
+ * POST /api/auth/login — body: { email, password } → { token, expiresIn, user }.
  */
 router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   const meta = { ip: req.ip, userAgent: req.headers['user-agent'] || null };
@@ -33,9 +30,8 @@ router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
 }));
 
 /**
- * POST /api/auth/verify-token — works in both modes.
- * Send Authorization: Bearer <TOKEN>; returns the verified profile + UI permissions.
- * In firebase mode this handshake is also recorded as the login event.
+ * POST /api/auth/verify-token — send Authorization: Bearer <TOKEN>;
+ * returns the verified profile + UI permissions.
  */
 router.post('/verify-token', authenticate, asyncHandler(async (req, res) => {
   await authProvider.recordLogin(req.user, { ip: req.ip, userAgent: req.headers['user-agent'] || null });

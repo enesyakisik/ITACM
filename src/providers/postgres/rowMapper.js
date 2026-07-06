@@ -1,4 +1,4 @@
-/** snake_case DB rows → the same camelCase API shapes the Firebase provider returns. */
+/** snake_case DB rows → the camelCase API shapes used across the app. */
 
 const toCamel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 

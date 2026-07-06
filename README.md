@@ -1,9 +1,9 @@
 # ITACM — IT Asset Control Pro
 
-> Self-hostable IT asset management backend: hardware inventory, employee asset
-> handovers (with printable receipts), software licenses, consumables and repair
-> tracking — with a **switchable storage backend**: run it fully self-hosted on
-> **PostgreSQL via Docker Compose**, or on **Firebase (Auth + Firestore)**.
+> Self-hosted IT asset management: hardware inventory, employee asset handovers
+> (with printable PDF receipts), software licenses, consumables and repair
+> tracking — with a built-in web UI. Runs fully self-hosted on **PostgreSQL via
+> Docker Compose**.
 
 **[🇹🇷 Türkçe dokümantasyon için buraya tıklayın → README.tr.md](README.tr.md)**
 
@@ -30,7 +30,7 @@
 - 🖥 **Built-in web UI** — served by the backend itself (no build step): Login, Dashboard, Hardware Inventory (bulk actions, QR codes, global search), Employee Directory with per-employee device history, Handover basket with **printable receipt**, software (license) assignment, Licenses, Consumables, Maintenance and IT User management with login auditing. Open `http://localhost:8000` after starting.
 - 🚀 **First-run onboarding** — set company name, logo and the Admin account on first launch; branding is applied across the UI and the printed handover forms (change later via Settings).
 - 🧪 **Demo dataset** — `npm run seed:demo` fills a postgres instance with a realistic 500-employee company (773 assets, receipts, audit history, software assignments) for evaluation.
-- 🔐 **Role-based access control** — `Admin`, `Helpdesk`, `Viewer` roles enforced on every endpoint
+- 🔐 **Role-based access control** — `Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on every endpoint
 - 💻 **Hardware inventory** — asset tags (unique, QR-encoded), serials, MAC addresses, specs, warranty
 - 🤝 **Atomic handover basket** — assign multiple assets to an employee in one all-or-nothing transaction, producing a printable handover receipt (Zimmet Tutanağı)
 - 🛠 **Maintenance lifecycle** — send to repair / return / scrap, with the pre-repair assignment state restored automatically
@@ -40,166 +40,63 @@
 - 🧾 **Full audit trail** — every assign/return/repair/progress-note is logged with who/when/why; per-user login history
 - ⏳ **Product lifecycle management** — set a lifecycle duration (months) per category once in Settings; every asset shows its EOL date, "EOL soon"/overdue flags in inventory, and lifecycle reports
 - 📈 **Reports & Custom Report Builder** — six preset reports plus a builder (7 data sources × selectable columns × filters), exported as Excel-friendly CSV or printed with company letterhead
-- 🗂 **Product catalog** — centrally managed brand/model lists per category feed the asset form dropdowns; asset tags are system-assigned and sequential
-- 🔁 **Two interchangeable backends, one API** — PostgreSQL (self-hosted) or Firebase (managed); the REST contract is identical
+- 🗂 **Product catalog** — centrally managed brand/model & spec lists per category feed the asset form dropdowns; asset tags are system-assigned and sequential
+- 📁 **Document archive** — every handover form is auto-filed per employee; upload signed scans (stored securely in the database)
 
-## Choose your backend
-
-| | 🐘 PostgreSQL (self-hosted) | 🔥 Firebase (managed) |
-|---|---|---|
-| **Best for** | On-premises, full data ownership, air-gapped networks | Zero-ops, Google-managed infra |
-| **Auth** | Built-in Email/Password + JWT (bcrypt-hashed) | Firebase Authentication (roles in custom claims) |
-| **Database** | PostgreSQL 16 (auto-provisioned schema) | Cloud Firestore (+ security rules included) |
-| **Setup** | `docker compose up -d` — that's it | Create a Firebase project, add a service account |
-| **Runs on** | Docker/VPS, Vercel + managed Postgres | Vercel, Docker/VPS, anywhere Node runs |
-
-Run the interactive wizard to choose and configure:
-
-```bash
-npm install
-npm run setup
-```
-
-The wizard writes a ready-to-run local `.env` (generates strong secrets for
-you) and prints the exact next steps for your choice. On hosted platforms such
-as Vercel, Railway, Render, Fly.io or Cloud Run, define the same names in the
-platform's Environment Variables / Secrets UI; the app reads them from
-`process.env` at runtime.
-
----
-
-## Quick start A — Self-hosted with Docker Compose (recommended)
+## Quick start — Docker Compose
 
 Everything is automatic: the database container is created, the schema is
-applied, permissions are handled, and the first Admin account is seeded.
+applied, and the first Admin (Owner) account is seeded.
 
 ```bash
 git clone https://github.com/<you>/itacm.git
 cd itacm
-cp .env.example .env
-# Edit .env: set at minimum JWT_SECRET (openssl rand -hex 32)
-# Optionally set ADMIN_EMAIL / ADMIN_PASSWORD
+
+npm install
+npm run setup          # generates .env with strong secrets (or copy .env.example)
 
 docker compose up -d
-docker compose logs api        # ← first-run Admin credentials are printed here
-curl http://localhost:8000/api/health
+docker compose logs api   # first-run Owner credentials are printed here
 ```
 
-> If you leave `ADMIN_PASSWORD` empty, a strong random password is generated
-> and printed **once** in the API logs. Change it after first login.
+Then open **http://localhost:8000** — the first visit shows the onboarding
+wizard to set your company name/logo and create the **Owner** account.
 
-Login and call the API:
+> If you leave `ADMIN_PASSWORD` empty, a strong random password is generated and
+> printed **once** in the API logs. Change it after first login.
 
-```bash
-TOKEN=$(curl -s http://localhost:8000/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"<from-logs-or-env>"}' \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["token"])')
-
-curl http://localhost:8000/api/dashboard/stats -H "Authorization: Bearer $TOKEN"
-```
-
-## Quick start B — Firebase (managed) — one command
-
-The setup wizard does **everything** for you: signs you into Firebase, creates
-(or picks) a project, creates the Web App + Firestore, deploys the security
-rules, generates the Admin credential, enables Email/Password sign-in, and
-writes a ready-to-run `.env` — no JSON or base64 by hand.
-
-```bash
-npm install
-npm run setup      # choose 1) Firebase, then follow the prompts
-npm start          # → open http://localhost:8000
-```
-
-The first visit shows the **onboarding wizard**: set your company name/logo and
-create the **Owner** account. That's it.
-
-> Prerequisites: just Node.js. The wizard uses the Firebase CLI via `npx`
-> (auto-downloaded); a browser opens once for Google sign-in. If `gcloud` is
-> installed it even creates the Admin key automatically — otherwise it opens the
-> one-click "Generate new private key" page and asks for the downloaded file.
-
-**Deploy to Vercel:** the wizard also writes `vercel-env.txt` (git-ignored) with
-the exact three variables to paste into Vercel → Settings → Environment
-Variables — or, if the Vercel CLI is installed, it offers to push them for you.
-Then just `vercel --prod`.
-
-<details><summary>What the three variables are (if you prefer to set them by hand)</summary>
-
-| Variable | Value |
-|---|---|
-| `DATA_BACKEND` | `firebase` |
-| `FIREBASE_SERVICE_ACCOUNT_BASE64` | base64 of the Admin service-account JSON (secret) |
-| `FIREBASE_WEB_CONFIG` | one-line Firebase **web** config JSON (public) |
-
-The service-account file is a full-access credential — never commit it
-(`.gitignore` blocks `*serviceAccount*.json` and `vercel-env.txt` as a safety
-net). Roles live in **Firebase Auth custom claims**; in Firebase mode the client
-signs in with the Firebase Web SDK and the API verifies the ID token, while in
-PostgreSQL mode it calls `POST /api/auth/login`. Everything else is identical.
-</details>
+Prefer to configure by hand? Copy `.env.example` to `.env`, set at least
+`JWT_SECRET` (`openssl rand -hex 32`), then `docker compose up -d`.
 
 ---
 
-## Deploying
+## Deploying to a server
 
-### Vercel
+The compose file works unchanged on any host with Docker. Put a reverse proxy
+(Caddy/Nginx/Traefik) with TLS in front of port 8000 and set `CORS_ORIGINS` to
+your frontend's origin if it differs.
 
-1. Push the repo to GitHub and **Import Project** in Vercel — `vercel.json` is
-   already configured (all `/api/*` traffic → one serverless function).
-2. In **Project Settings → Environment Variables**, add the required values for
-   Production (and Preview if you want branch deploys). Do **not** put secrets
-   in `vercel.json`, source code, or the repo.
-   - **Firebase mode:** `DATA_BACKEND=firebase`,
-     `FIREBASE_SERVICE_ACCOUNT_BASE64=<base64 service account JSON>`,
-     `FIREBASE_WEB_CONFIG=<one-line web config JSON>`
-   - **Postgres mode:** `DATA_BACKEND=postgres`,
-     `DATABASE_URL=<managed Postgres URL>`, `PGSSL=true`,
-     `JWT_SECRET=<openssl rand -hex 32>`, `ADMIN_EMAIL`,
-     `ADMIN_USERNAME`, `ADMIN_PASSWORD`
-3. Deploy. The schema is applied automatically on the first cold start.
-
-Vercel Environment Variables are available to the serverless function through
-`process.env`; changes apply to new deployments, so redeploy after editing
-them. `DATABASE_URL` is the preferred Postgres connection variable. If a
-Marketplace integration injects `POSTGRES_URL`, ITACM will use it as a
-fallback, but prefer the provider's pooled connection string for serverless.
-
-### Docker on a VPS / on-premises
-
-The compose file above works unchanged on any server with Docker. Put a
-reverse proxy (Caddy/Nginx/Traefik) with TLS in front of port 8000 and set
-`CORS_ORIGINS` to your frontend's origin.
-
-### Other platforms (Railway, Render, Fly.io, Cloud Run…)
-
-Deploy the `Dockerfile`, attach a Postgres add-on, and set the same env vars in
-the platform's secret/env manager. Nothing else is required — provisioning is
-automatic at startup.
+For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the
+`Dockerfile`, attach a Postgres add-on, and set the same environment variables
+(`DATABASE_URL`, `PGSSL=true`, `JWT_SECRET`, `ADMIN_*`). The schema is applied
+automatically on startup.
 
 ---
 
 ## Configuration reference
 
-| Variable | Mode | Required | Description |
-|---|---|---|---|
-| `DATA_BACKEND` | both | ✅ | `postgres` or `firebase` |
-| `PORT` | both | – | HTTP port (default `8000`) |
-| `CORS_ORIGINS` | both | – | Comma-separated allowed origins |
-| `DATABASE_URL` | postgres | ✅ | Preferred Postgres URL: `postgres://user:pass@host:5432/db` |
-| `POSTGRES_URL` | postgres | – | Fallback when a platform integration injects this instead of `DATABASE_URL` |
-| `PGSSL` | postgres | – | `true` for managed Postgres over TLS |
-| `JWT_SECRET` | postgres | ✅ | Min 32 chars — `openssl rand -hex 32` |
-| `JWT_EXPIRES_IN` | postgres | – | Token lifetime (default `12h`) |
-| `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | postgres | – | First-run Admin seed (password auto-generated if empty) |
-| `FIREBASE_SERVICE_ACCOUNT_BASE64` | firebase | ✅* | Base64 service account JSON |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | firebase | ✅* | Raw JSON alternative |
-| `GOOGLE_APPLICATION_CREDENTIALS` | firebase | ✅* | File-path alternative (local dev) |
-| `FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS` | firebase | ✅* | Set `true` to use Google Cloud ADC without a key file |
-| `FIREBASE_WEB_CONFIG` | firebase | – | Public Firebase Web App config JSON; required for built-in UI login |
+| Variable | Required | Description |
+|---|---|---|
+| `PORT` | – | HTTP port (default `8000`) |
+| `CORS_ORIGINS` | – | Comma-separated allowed origins (blank = same-origin) |
+| `DATABASE_URL` | ✅ | `postgres://user:pass@host:5432/db` (or `POSTGRES_URL`) |
+| `PGSSL` | – | `true` for managed Postgres over TLS |
+| `JWT_SECRET` | ✅ | Min 32 chars — `openssl rand -hex 32` |
+| `JWT_EXPIRES_IN` | – | Token lifetime (default `12h`) |
+| `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | First-run Owner seed (password auto-generated if empty) |
 
-\* exactly one Firebase Admin credential source.
+With docker compose, `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` feed
+both the database container and the API's `DATABASE_URL`.
 
 ## API reference
 
@@ -251,46 +148,36 @@ impossible for two operators to hand over the same laptop concurrently.
 
 ## Security notes
 
-- **Secrets never live in the repo.** `.env` and `*serviceAccount*.json` are
-  git-ignored; the setup wizard writes `.env` with `0600` permissions and
-  converts Firebase keys to env vars instead of copying files. On Vercel or a
-  similar platform, store these values in the platform Environment Variables /
-  Secrets UI and let the app read them from `process.env`.
-- **Postgres mode:** passwords are bcrypt-hashed (cost 12); JWTs are signed
-  HS256 with your ≥32-char secret; login uses a single error message for both
-  unknown email and wrong password; every request re-checks the user row so
-  role changes/deletions apply instantly.
-- **Firebase mode:** roles live in custom claims (tamper-proof); tokens are
-  verified with `checkRevoked`; Firestore security rules
-  ([firestore.rules](firestore.rules)) give clients read-only access and force
-  all writes through this API.
-- **Hardening:** strict Content-Security-Policy (no inline scripts), HSTS, nosniff/frame-deny/referrer/
+- **Secrets never live in the repo.** `.env` is git-ignored; the setup wizard
+  writes it with `0600` permissions and generates a strong `JWT_SECRET` and DB
+  password for you.
+- **Auth:** passwords are bcrypt-hashed (cost 12); JWTs are signed HS256 with
+  your ≥32-char secret; login uses a single error message for both unknown
+  email and wrong password; every request re-checks the user row so role
+  changes/deletions apply instantly.
+- **Hardening:** strict Content-Security-Policy (no inline scripts, self-only), HSTS, nosniff/frame-deny/referrer/
   permissions-policy headers, login rate-limiting (20 attempts / 15 min / IP), global API rate limit
   (1000 req / 5 min / IP), same-origin-only CORS by default, 1MB body limit, `x-powered-by` disabled,
   one-shot onboarding endpoint that locks itself after first use, `npm audit`-clean dependency tree.
-- **Transport:** always front the API with HTTPS (Vercel does this for you;
-  use Caddy/Nginx on a VPS). Set `CORS_ORIGINS` to your exact frontend origin.
+- **Transport:** front the API with HTTPS (Caddy/Nginx/Traefik on a VPS). Set
+  `CORS_ORIGINS` to your exact frontend origin if it differs.
 
 ## Project structure
 
 ```
-├── server.js                  Node/Docker entry (auto-migrates in postgres mode)
-├── api/index.js               Vercel serverless entry
+├── server.js                  Node/Docker entry (auto-migrates on startup)
 ├── public/                    Built-in web UI (vanilla JS SPA, no build step)
 ├── src/
 │   ├── app.js                 Express app + route mounting
-│   ├── config/                Env parsing & backend selection
+│   ├── config/                Env parsing
 │   ├── middleware/            Bearer auth + role gate, error handling
-│   ├── routes/                Thin controllers (backend-agnostic)
-│   └── providers/
-│       ├── firebase/          Firebase Auth + Firestore implementation
-│       └── postgres/          JWT auth + PostgreSQL implementation (schema.sql, auto-migrate)
-├── scripts/setup.js           Interactive backend chooser (npm run setup)
-├── scripts/setUserRole.js     Firebase custom-claims CLI
+│   ├── routes/                Thin controllers
+│   ├── utils/                 PDF generation, defaults, permissions
+│   └── providers/postgres/    JWT auth + PostgreSQL (schema.sql, auto-migrate, services)
+├── scripts/setup.js           .env generator (npm run setup)
+├── scripts/seed-demo.js       500-employee demo dataset (npm run seed:demo)
 ├── docker-compose.yml         Self-hosted stack (API + Postgres)
 ├── Dockerfile
-├── vercel.json
-├── firestore.rules            Firestore security rules (firebase mode)
 └── .env.example               Fully documented configuration template
 ```
 

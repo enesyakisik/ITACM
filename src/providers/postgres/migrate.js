@@ -1,7 +1,7 @@
 /**
  * Automatic database provisioning for postgres mode.
  *
- * Runs on every server start (and once per cold start on Vercel):
+ * Runs on every server start:
  *   1. Applies schema.sql — fully idempotent (CREATE ... IF NOT EXISTS).
  *   2. Seeds the first Admin user if the users table is empty.
  *      Password comes from ADMIN_PASSWORD; if unset, a strong random one is

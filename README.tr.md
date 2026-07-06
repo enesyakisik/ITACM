@@ -2,9 +2,9 @@
 
 > Kendi sunucunuzda barındırılabilir BT varlık yönetimi backend'i: donanım
 > envanteri, çalışan zimmet işlemleri (yazdırılabilir zimmet tutanağı ile),
-> yazılım lisansları, sarf malzemeleri ve arıza/bakım takibi — **seçilebilir
-> veri katmanı** ile: ister **Docker Compose üzerinde PostgreSQL** ile tamamen
-> kendi sunucunuzda, ister **Firebase (Auth + Firestore)** üzerinde çalıştırın.
+> yazılım lisansları, sarf malzemeleri ve arıza/bakım takibi — dahili web
+> arayüzü ile. Tamamen kendi sunucunuzda **Docker Compose + PostgreSQL** ile
+> çalışır.
 
 **[🇬🇧 English documentation → README.md](README.md)**
 
@@ -31,7 +31,7 @@
 - 🖥 **Dahili web arayüzü** — backend'in kendisi tarafından sunulur (build adımı yok): Giriş, Dashboard, Donanım Envanteri (toplu işlemler, QR kodlar, global arama), kişi bazlı cihaz geçmişli Personel Rehberi, **yazdırılabilir tutanaklı** zimmet sepeti, yazılım (lisans) zimmeti, Lisanslar, Sarf Malzemeleri, Bakım ve login denetimli BT Kullanıcı yönetimi. Başlattıktan sonra `http://localhost:8000` adresini açın.
 - 🚀 **İlk kullanım sihirbazı (onboarding)** — ilk açılışta şirket adı, logo ve Admin hesabını belirleyin; marka tüm arayüze ve yazdırılan zimmet tutanaklarına uygulanır (sonradan Ayarlar'dan değiştirilebilir).
 - 🧪 **Demo veri seti** — `npm run seed:demo`, postgres kurulumunu 500 personellik gerçekçi bir şirketle doldurur (773 varlık, tutanaklar, denetim geçmişi, yazılım zimmetleri).
-- 🔐 **Rol tabanlı yetkilendirme** — her endpoint'te `Admin`, `Helpdesk`, `Viewer` rolleri
+- 🔐 **Rol tabanlı yetkilendirme** — her endpoint'te `Owner`, `Admin`, `Helpdesk`, `Viewer` rolleri
 - 💻 **Donanım envanteri** — varlık etiketi (benzersiz, QR kodlu), seri no, MAC adresleri, teknik özellikler, garanti
 - 🤝 **Atomik zimmet sepeti** — birden çok varlığı tek "ya hep ya hiç" transaction'ı ile çalışana zimmetleyin; yazdırılabilir **Zimmet Tutanağı** otomatik oluşur
 - 🛠 **Bakım yaşam döngüsü** — servise gönder / geri al / hurdaya ayır; onarım öncesi zimmet durumu otomatik geri yüklenir
@@ -42,177 +42,59 @@
 - ⏳ **Ürün yaşam döngüsü yönetimi** — kategori başına yaşam süresi (ay) Ayarlar'dan merkezi olarak belirlenir; her varlıkta EOL tarihi, envanterde "EOL soon"/gecikti rozetleri ve lifecycle raporları
 - 📈 **Raporlar & Özel Rapor Oluşturucu** — 6 hazır rapor + oluşturucu (7 veri kaynağı × seçilebilir kolon × filtre), Excel uyumlu CSV veya şirket antetli yazdırma
 - 🗂 **Ürün kataloğu** — kategori bazlı marka/model listeleri merkezi yönetilir ve varlık formunu besler; asset tag'ler sistem tarafından sıralı atanır
-- 🔁 **Tek API, iki değiştirilebilir backend** — PostgreSQL (kendi sunucun) veya Firebase (yönetilen); REST sözleşmesi birebir aynı
+- 📁 **Belge arşivi** — her zimmet tutanağı kişi bazında otomatik dosyalanır; imzalı taramalar yüklenebilir (veritabanında güvenle saklanır)
 
-## Backend'inizi seçin
+## Hızlı başlangıç — Docker Compose
 
-| | 🐘 PostgreSQL (kendi sunucun) | 🔥 Firebase (yönetilen) |
-|---|---|---|
-| **Kimin için** | Şirket içi kurulum, verinin tamamen sizde kalması, kapalı ağlar | Sıfır bakım, Google altyapısı |
-| **Kimlik doğrulama** | Dahili E-posta/Şifre + JWT (bcrypt) | Firebase Authentication (roller custom claim'lerde) |
-| **Veritabanı** | PostgreSQL 16 (şema otomatik kurulur) | Cloud Firestore (güvenlik kuralları dahil) |
-| **Kurulum** | `docker compose up -d` — hepsi bu | Firebase projesi + servis hesabı |
-| **Nerede çalışır** | Docker/VPS, Vercel + yönetilen Postgres | Vercel, Docker/VPS, Node çalışan her yer |
-
-Seçim ve yapılandırma için interaktif sihirbazı çalıştırın:
-
-```bash
-npm install
-npm run setup
-```
-
-Sihirbaz, yerel kullanım için çalışmaya hazır bir `.env` üretir (güçlü gizli
-anahtarları sizin yerinize oluşturur) ve seçiminize göre sonraki adımları
-ekrana yazar. Vercel, Railway, Render, Fly.io veya Cloud Run gibi platformlarda
-aynı isimleri platformun Environment Variables / Secrets alanına girin;
-uygulama değerleri çalışma zamanında `process.env` üzerinden okur.
-
----
-
-## Hızlı başlangıç A — Docker Compose ile kendi sunucunuzda (önerilen)
-
-Her şey otomatiktir: veritabanı konteyneri oluşturulur, şema uygulanır,
-yetkiler ayarlanır ve ilk Admin hesabı otomatik açılır.
+Her şey otomatiktir: veritabanı konteyneri oluşturulur, şema uygulanır ve ilk
+Admin (Owner) hesabı tohumlanır.
 
 ```bash
 git clone https://github.com/<siz>/itacm.git
 cd itacm
-cp .env.example .env
-# .env dosyasında en azından JWT_SECRET'ı doldurun (openssl rand -hex 32)
-# İsterseniz ADMIN_EMAIL / ADMIN_PASSWORD belirleyin
+
+npm install
+npm run setup          # güçlü secret'larla .env üretir (veya .env.example'ı kopyalayın)
 
 docker compose up -d
-docker compose logs api        # ← ilk çalıştırmada Admin bilgileri burada yazdırılır
-curl http://localhost:8000/api/health
+docker compose logs api   # ilk çalıştırmada Owner bilgileri burada yazdırılır
 ```
 
-> `ADMIN_PASSWORD` boş bırakılırsa güçlü ve rastgele bir şifre üretilir ve API
-> loglarında **bir kez** gösterilir. İlk girişten sonra mutlaka değiştirin.
+Ardından **http://localhost:8000** adresini açın — ilk açılışta onboarding
+sihirbazı gelir: şirket adı/logo belirleyip **Owner** hesabını oluşturursunuz.
 
-Giriş yapıp API'yi çağırın:
-
-```bash
-TOKEN=$(curl -s http://localhost:8000/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"<loglardan-veya-env>"}' \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["token"])')
-
-curl http://localhost:8000/api/dashboard/stats -H "Authorization: Bearer $TOKEN"
-```
-
-## Hızlı başlangıç B — Firebase (yönetilen)
-
-### 1. Firebase projesini oluşturun
-
-1. [console.firebase.google.com](https://console.firebase.google.com) → **Proje ekle**
-2. **Authentication → Sign-in method** → **Email/Password**'ü etkinleştirin
-3. **Firestore Database → Create database** (production mode)
-
-### 2. Servis hesabı anahtarı alın — ve güvenle saklayın 🔒
-
-**Project settings → Service accounts → Generate new private key** bir JSON
-dosyası indirir. Bu dosya **projenize tam erişim sağlayan bir kimlik
-bilgisidir. Asla commit etmeyin, asla repo klasörünün içine koymayın.**
-(`.gitignore` güvenlik ağı olarak `*serviceAccount*.json` desenini engeller,
-ama dosyaya bir parola gibi davranın.)
-
-Uygulamaya şu yollardan **biriyle** verin:
-
-| Yöntem | Nasıl | Nerede kullanılır |
-|---|---|---|
-| **Base64 env değişkeni** (önerilen) | `base64 -i key.json \| tr -d '\n'` → `FIREBASE_SERVICE_ACCOUNT_BASE64` | Vercel ve tüm PaaS secret depoları |
-| Ham JSON env değişkeni | JSON'u `FIREBASE_SERVICE_ACCOUNT_JSON` içine yapıştırın | CI secret'ları |
-| Dosya yolu | `GOOGLE_APPLICATION_CREDENTIALS=/repo/disinda/bir/yol/key.json` | yerel geliştirme |
-| Açık ADC kullanımı | `FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS=true` | Google Cloud runtime'ları |
-
-`npm run setup` sihirbazı base64 dönüşümünü sizin için yapar ve anahtar
-dosyasını asla projenin içine kopyalamaz.
-
-Firebase modunda dahili web arayüzünü kullanacaksanız ayrıca bir Firebase Web
-App oluşturup `FIREBASE_WEB_CONFIG` değerini tek satırlık web config JSON'u
-olarak girin. Bu değer public Firebase istemci config'idir; Admin servis hesabı
-anahtarı değildir.
-
-### 3. Yapılandırın, kuralları deploy edin, ilk Admin'i oluşturun
-
-```bash
-npm run setup                # 2. seçeneği (Firebase) seçin
-firebase deploy --only firestore:rules,firestore:indexes
-npm start
-node scripts/setUserRole.js --create admin@sirket.com 'S3cret!' 'IT Admin' Admin
-```
-
-Roller **Firebase Auth custom claim'lerinde** saklanır; yani her ID token'ın
-içine kriptografik olarak gömülüdür. Rol değişince kullanıcının refresh
-token'ları anında iptal edilir.
-
-Firebase modunda **istemci**, Firebase Web SDK ile giriş yapar
-(`signInWithEmailAndPassword`) ve aldığı ID token'ı
-`Authorization: Bearer <ID_TOKEN>` olarak gönderir. PostgreSQL modunda ise
-istemci `POST /api/auth/login` çağırır. Sonrası iki modda da birebir aynıdır.
+> `ADMIN_PASSWORD` boş bırakılırsa güçlü rastgele bir şifre üretilir ve
+> loglarda **bir kez** gösterilir. İlk girişten sonra değiştirin.
 
 ---
 
-## Yayına alma (Deployment)
+## Sunucuya yayına alma
 
-### Vercel
-
-1. Repo'yu GitHub'a push'layın ve Vercel'de **Import Project** deyin —
-   `vercel.json` hazırdır (tüm `/api/*` trafiği tek serverless fonksiyona gider).
-2. **Project Settings → Environment Variables** bölümüne Production için
-   gerekli değerleri ekleyin (branch deploy istiyorsanız Preview için de
-   ekleyin). Secret değerleri `vercel.json`, kaynak kod veya repo içine
-   yazmayın.
-   - **Firebase modu:** `DATA_BACKEND=firebase`,
-     `FIREBASE_SERVICE_ACCOUNT_BASE64=<base64 servis hesabı JSON'u>`,
-     `FIREBASE_WEB_CONFIG=<tek satır web config JSON'u>`
-   - **Postgres modu:** `DATA_BACKEND=postgres`,
-     `DATABASE_URL=<yönetilen Postgres URL>`, `PGSSL=true`,
-     `JWT_SECRET=<openssl rand -hex 32>`, `ADMIN_EMAIL`,
-     `ADMIN_USERNAME`, `ADMIN_PASSWORD`
-3. Deploy edin. Şema ilk cold start'ta otomatik uygulanır.
-
-Vercel Environment Variables değerlerini serverless fonksiyona `process.env`
-üzerinden verir; değişiklikler sadece yeni deployment'lara uygulanır, bu yüzden
-env değişikliğinden sonra yeniden deploy edin. Postgres için tercih edilen isim
-`DATABASE_URL`'dir. Bir Marketplace entegrasyonu `POSTGRES_URL` üretirse ITACM
-bunu fallback olarak kullanır; serverless için sağlayıcının *pooled* bağlantı
-adresini tercih edin.
-
-### VPS / şirket içi Docker
-
-Yukarıdaki compose dosyası Docker kurulu her sunucuda aynen çalışır. 8000
-portunun önüne TLS'li bir reverse proxy (Caddy/Nginx/Traefik) koyun ve
+Compose dosyası Docker kurulu her sunucuda aynen çalışır. 8000 portunun önüne
+TLS'li bir reverse proxy (Caddy/Nginx/Traefik) koyun ve gerekiyorsa
 `CORS_ORIGINS` değerini frontend adresinize ayarlayın.
 
-### Diğer platformlar (Railway, Render, Fly.io, Cloud Run…)
-
-`Dockerfile`'ı deploy edin, bir Postgres eklentisi bağlayın ve compose ile aynı
-env değişkenlerini platformun secret/env yöneticisine girin. Başka bir şey
-gerekmez — kurulum açılışta otomatiktir.
+Yönetilen platformlarda (Railway, Render, Fly.io, Cloud Run…) `Dockerfile`'ı
+deploy edin, bir Postgres eklentisi bağlayın ve aynı env değişkenlerini
+(`DATABASE_URL`, `PGSSL=true`, `JWT_SECRET`, `ADMIN_*`) girin. Şema açılışta
+otomatik uygulanır.
 
 ---
 
 ## Yapılandırma referansı
 
-| Değişken | Mod | Zorunlu | Açıklama |
-|---|---|---|---|
-| `DATA_BACKEND` | ikisi | ✅ | `postgres` veya `firebase` |
-| `PORT` | ikisi | – | HTTP portu (varsayılan `8000`) |
-| `CORS_ORIGINS` | ikisi | – | Virgülle ayrılmış izinli origin'ler |
-| `DATABASE_URL` | postgres | ✅ | Tercih edilen Postgres URL'i: `postgres://user:pass@host:5432/db` |
-| `POSTGRES_URL` | postgres | – | Platform entegrasyonu `DATABASE_URL` yerine bunu üretirse fallback olarak kullanılır |
-| `PGSSL` | postgres | – | TLS'li yönetilen Postgres için `true` |
-| `JWT_SECRET` | postgres | ✅ | En az 32 karakter — `openssl rand -hex 32` |
-| `JWT_EXPIRES_IN` | postgres | – | Token ömrü (varsayılan `12h`) |
-| `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | postgres | – | İlk Admin (şifre boşsa otomatik üretilir) |
-| `FIREBASE_SERVICE_ACCOUNT_BASE64` | firebase | ✅* | Base64 kodlu servis hesabı JSON'u |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | firebase | ✅* | Ham JSON alternatifi |
-| `GOOGLE_APPLICATION_CREDENTIALS` | firebase | ✅* | Dosya yolu alternatifi (yerel geliştirme) |
-| `FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS` | firebase | ✅* | Anahtar dosyası olmadan Google Cloud ADC kullanmak için `true` |
-| `FIREBASE_WEB_CONFIG` | firebase | – | Public Firebase Web App config JSON'u; dahili UI login'i için gerekli |
+| Değişken | Zorunlu | Açıklama |
+|---|---|---|
+| `PORT` | – | HTTP portu (varsayılan `8000`) |
+| `CORS_ORIGINS` | – | Virgülle ayrılmış izinli origin'ler (boş = same-origin) |
+| `DATABASE_URL` | ✅ | `postgres://user:pass@host:5432/db` (veya `POSTGRES_URL`) |
+| `PGSSL` | – | TLS'li yönetilen Postgres için `true` |
+| `JWT_SECRET` | ✅ | En az 32 karakter — `openssl rand -hex 32` |
+| `JWT_EXPIRES_IN` | – | Token ömrü (varsayılan `12h`) |
+| `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | İlk Owner (şifre boşsa otomatik üretilir) |
 
-\* Firebase Admin credential kaynaklarından tam olarak biri.
+docker compose ile `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` hem
+veritabanı konteynerini hem de API'nin `DATABASE_URL`'ini besler.
 
 ## API referansı
 
@@ -222,7 +104,7 @@ biçimindedir. `login`/`health` dışındaki tüm endpoint'ler
 
 | Metot | Endpoint | Roller | Açıklama |
 |---|---|---|---|
-| POST | `/api/auth/login` | herkese açık | E-posta/şifre → JWT *(postgres modu)* |
+| POST | `/api/auth/login` | herkese açık | E-posta/şifre → JWT |
 | POST | `/api/auth/verify-token` | tümü | Token doğrula, profil + izinleri döndür |
 | GET/POST | `/api/auth/users` | Admin | BT kullanıcılarını listele / oluştur |
 | PUT | `/api/auth/users/:uid/role` | Admin | Kullanıcı rolünü değiştir |
@@ -255,8 +137,7 @@ POST /api/handovers
 }
 ```
 
-**Tek transaction** içinde (Firestore `runTransaction` / Postgres
-`BEGIN … FOR UPDATE`): her varlığın `In Stock` olduğu doğrulanır → tutanak
+**Tek transaction** içinde (Postgres `BEGIN … FOR UPDATE` satır kilitleri): her varlığın `In Stock` olduğu doğrulanır → tutanak
 belgesi oluşturulur → her varlık çalışana bağlı `Assigned` durumuna geçer →
 çalışanın `activeAssetCount` sayacı artar → her varlık için bir denetim satırı
 yazılır. Sepetteki **tek bir** varlık bile kilitliyse API, varlık bazında
@@ -266,43 +147,36 @@ zimmetlemesi imkânsızdır.
 
 ## Güvenlik notları
 
-- **Gizli bilgiler asla repoda yaşamaz.** `.env` ve `*serviceAccount*.json`
-  git tarafından yok sayılır; kurulum sihirbazı `.env` dosyasını `0600` izniyle
-  yazar ve Firebase anahtarını dosya kopyalamak yerine env değişkenine çevirir.
-  Vercel veya benzer platformlarda bu değerleri platformun Environment
-  Variables / Secrets alanında saklayın; uygulama `process.env` üzerinden okur.
-- **Postgres modu:** şifreler bcrypt ile hash'lenir (cost 12); JWT'ler ≥32
+- **Gizli bilgiler asla repoda yaşamaz.** `.env` git tarafından yok sayılır;
+  kurulum sihirbazı `.env` dosyasını `0600` izniyle yazar ve güçlü bir
+  `JWT_SECRET` + DB şifresi üretir.
+- **Kimlik doğrulama:** şifreler bcrypt ile hash'lenir (cost 12); JWT'ler ≥32
   karakterlik gizli anahtarla HS256 imzalanır; girişte bilinmeyen e-posta ile
   yanlış şifre aynı hatayı döndürür (hesap taraması engellenir); her istekte
   kullanıcı satırı tekrar okunur, böylece rol değişikliği/silme anında etki eder.
-- **Firebase modu:** roller custom claim'lerdedir (değiştirilemez); token'lar
-  `checkRevoked` ile doğrulanır; Firestore güvenlik kuralları
-  ([firestore.rules](firestore.rules)) istemcilere yalnızca okuma izni verir,
-  tüm yazmaları bu API'ye zorlar.
-- **İletişim:** API'nin önüne daima HTTPS koyun (Vercel bunu otomatik yapar;
-  VPS'te Caddy/Nginx kullanın). `CORS_ORIGINS` değerini frontend'inizin tam
-  adresine ayarlayın.
+- **Sıkılaştırma:** katı Content-Security-Policy (inline script yok), HSTS,
+  nosniff/frame-deny başlıkları, login rate-limit (15 dk'da 20 deneme/IP), genel
+  API rate-limit (5 dk'da 1000 istek/IP), varsayılan same-origin CORS, 1MB body
+  limiti, tek seferlik onboarding endpoint'i.
+- **İletişim:** API'nin önüne HTTPS koyun (VPS'te Caddy/Nginx/Traefik).
+  `CORS_ORIGINS` değerini frontend'inizin tam adresine ayarlayın.
 
 ## Proje yapısı
 
 ```
-├── server.js                  Node/Docker girişi (postgres modunda otomatik migrasyon)
-├── api/index.js               Vercel serverless girişi
+├── server.js                  Node/Docker girişi (açılışta otomatik migrasyon)
 ├── public/                    Dahili web arayüzü (vanilla JS SPA, build adımı yok)
 ├── src/
 │   ├── app.js                 Express uygulaması + route bağlama
-│   ├── config/                Env okuma ve backend seçimi
+│   ├── config/                Env okuma
 │   ├── middleware/            Bearer auth + rol kapısı, hata yönetimi
-│   ├── routes/                İnce controller'lar (backend'den bağımsız)
-│   └── providers/
-│       ├── firebase/          Firebase Auth + Firestore implementasyonu
-│       └── postgres/          JWT auth + PostgreSQL implementasyonu (schema.sql, otomatik migrasyon)
-├── scripts/setup.js           İnteraktif backend seçici (npm run setup)
-├── scripts/setUserRole.js     Firebase custom-claims CLI aracı
+│   ├── routes/                İnce controller'lar
+│   ├── utils/                 PDF üretimi, varsayılanlar, izinler
+│   └── providers/postgres/    JWT auth + PostgreSQL (schema.sql, otomatik migrasyon, servisler)
+├── scripts/setup.js           .env üreticisi (npm run setup)
+├── scripts/seed-demo.js       500 personellik demo veri (npm run seed:demo)
 ├── docker-compose.yml         Kendi sunucunda tam yığın (API + Postgres)
 ├── Dockerfile
-├── vercel.json
-├── firestore.rules            Firestore güvenlik kuralları (firebase modu)
 └── .env.example               Eksiksiz belgelenmiş yapılandırma şablonu
 ```
 

@@ -1,4 +1,4 @@
-/** Express app shared by every runtime: local Node, Docker, and Vercel. */
+/** Express app — served by server.js (local & Docker). */
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -12,16 +12,15 @@ function createApp() {
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // correct req.ip behind reverse proxies
 
-  // Baseline security headers (no external dependency needed).
-  // CSP allows only our own code plus Google Fonts and — for firebase mode
-  // client login — the Firebase Web SDK and its auth endpoints.
+  // Baseline security headers (no external dependency needed). CSP allows
+  // only our own code plus Google Fonts.
   const CSP = [
     "default-src 'self'",
-    "script-src 'self' https://www.gstatic.com",
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     'font-src https://fonts.gstatic.com',
     "img-src 'self' data:",
-    "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com",
+    "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -74,40 +73,18 @@ function createApp() {
     res.json({ success: true, service: 'itacm-backend', backend: config.backend })
   );
 
-  // Public bootstrap info for the UI: backend, branding, onboarding state,
-  // and (optionally) the Firebase *web* config — no secrets here.
+  // Public bootstrap info for the UI: branding + onboarding state (no secrets).
   app.get('/api/config', async (req, res) => {
-    let firebaseWebConfig = null;
-    if (config.firebaseWebConfig) {
-      try { firebaseWebConfig = JSON.parse(config.firebaseWebConfig); }
-      catch { /* invalid web config JSON — surfaced via configError below */ }
-    }
-
-    // Report the *configured* backend even if the provider can't read yet, so
-    // the UI never silently falls back to postgres. A fresh instance that can
-    // reach its store returns onboarded:false → the onboarding wizard shows.
-    let configError = null;
-    if (config.backend === 'firebase') {
-      try {
-        const { initError } = require('./providers/firebase/firebase');
-        if (initError) configError = 'Firebase Admin credentials are invalid: ' + initError;
-      } catch (err) { configError = 'Firebase init failed: ' + err.message; }
-      if (config.firebaseWebConfig && !firebaseWebConfig) {
-        configError = configError || 'FIREBASE_WEB_CONFIG is not valid JSON';
-      } else if (!config.firebaseWebConfig) {
-        configError = configError || 'FIREBASE_WEB_CONFIG is not set — the web UI cannot sign in';
-      }
-    }
-
-    // Default onboarded=false so a not-yet-set-up instance always reaches the
-    // wizard; only a successful read can flip it to true.
+    // Default onboarded=false so a not-yet-set-up instance reaches the wizard;
+    // only a successful read flips it to true.
     let settings = { companyName: 'IT Asset Control Pro', companyLogo: null, onboarded: false };
+    let configError = null;
     try {
       settings = await require('./providers').settingsService.getSettings();
     } catch (err) {
-      configError = configError || (config.backend + ' store unavailable: ' + err.message);
+      configError = 'Database unavailable: ' + err.message;
     }
-    res.json({ success: true, data: { backend: config.backend, firebaseWebConfig, configError, ...settings } });
+    res.json({ success: true, data: { backend: config.backend, configError, ...settings } });
   });
 
   app.use('/api', require('./routes/setup.routes'));
@@ -131,29 +108,4 @@ function createApp() {
   return app;
 }
 
-/**
- * Default export: a lazy request handler.
- *
- * Vercel's Express framework preset auto-detects this file as the server
- * entrypoint and requires the DEFAULT export to be a function/app —
- * exporting only { createApp } made every deployment crash with
- * "Invalid export found in module /var/task/src/app.js".
- *
- * The handler builds the app on first request and, in postgres mode, runs
- * the idempotent schema migration once per cold start.
- */
-let _app = null;
-let _ready = null;
-
-async function handler(req, res) {
-  if (!_app) _app = createApp();
-  const providers = require('./providers');
-  if (providers.ensureDatabase) {
-    if (!_ready) _ready = providers.ensureDatabase();
-    await _ready;
-  }
-  return _app(req, res);
-}
-
-module.exports = handler;
-module.exports.createApp = createApp; // named import used by server.js / api/index.js
+module.exports = { createApp };
