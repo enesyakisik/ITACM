@@ -1582,6 +1582,8 @@ async function printHandover(h) {
     </div>`,
     foot: `
       <button class="btn btn-outline" data-close>Close</button>
+      ${h.transactionDate && h.employeeId && h.id && h.id !== h.employeeId
+        ? '<button class="btn btn-outline" id="do-download"><span class="ms">download</span> Download PDF</button>' : ''}
       <button class="btn btn-primary" id="do-print"><span class="ms">print</span> Print Form</button>`,
     onMount(overlay) {
       $('#do-print', overlay).addEventListener('click', () => {
@@ -1589,6 +1591,31 @@ async function printHandover(h) {
         const edited = [...overlay.querySelectorAll('.preview-paper')].map((p) => p.innerHTML).join('');
         $('#print-root').innerHTML = edited;
         window.print();
+      });
+      const dl = $('#do-download', overlay);
+      if (dl) dl.addEventListener('click', async () => {
+        dl.disabled = true;
+        try {
+          // Server-generated PDF (works even where the print dialog is blocked).
+          const resp = await fetch(`/api/handovers/${h.id}/pdf`, {
+            headers: { Authorization: 'Bearer ' + Auth.token },
+          });
+          if (!resp.ok) {
+            const j = await resp.json().catch(() => ({}));
+            throw new Error(j.error || 'PDF could not be generated');
+          }
+          const blob = await resp.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `zimmet-HF-${String(h.id).slice(0, 8).toUpperCase()}.pdf`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          toast('Zimmet formu PDF olarak indirildi', 'success');
+        } catch (err) {
+          toast(err.message, 'error');
+        } finally {
+          dl.disabled = false;
+        }
       });
     },
   });

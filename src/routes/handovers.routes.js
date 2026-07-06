@@ -21,6 +21,28 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, data: await handoverService.listHandovers(req.query) });
 }));
 
+/** GET /api/handovers/:id/pdf — download the receipt as a real PDF file. */
+router.get('/:id/pdf', asyncHandler(async (req, res) => {
+  const { handoverService, employeeService, settingsService } = require('../services');
+  const { buildHandoverPdf } = require('../utils/handoverPdf');
+
+  const handover = await handoverService.getHandover(req.params.id);
+  const settings = await settingsService.getSettings();
+  let employee = null;
+  try {
+    employee = (await employeeService.listEmployees({ limit: 1000 }))
+      .find((e) => e.id === handover.employeeId) || null;
+  } catch { /* render without dept/title */ }
+
+  const formNo = 'HF-' + String(handover.id).slice(0, 8).toUpperCase();
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="zimmet-${formNo}.pdf"`);
+  buildHandoverPdf(res, {
+    handover, employee, settings,
+    deliveredBy: req.user.username || req.user.email,
+  });
+}));
+
 /** GET /api/handovers/:id — one receipt, feeds the Print Preview (Zimmet Tutanağı). */
 router.get('/:id', asyncHandler(async (req, res) => {
   res.json({ success: true, data: await handoverService.getHandover(req.params.id) });

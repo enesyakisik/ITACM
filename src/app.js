@@ -98,5 +98,29 @@ function createApp() {
   return app;
 }
 
+/**
+ * Default export: a lazy request handler.
+ *
+ * Vercel's Express framework preset auto-detects this file as the server
+ * entrypoint and requires the DEFAULT export to be a function/app —
+ * exporting only { createApp } made every deployment crash with
+ * "Invalid export found in module /var/task/src/app.js".
+ *
+ * The handler builds the app on first request and, in postgres mode, runs
+ * the idempotent schema migration once per cold start.
+ */
+let _app = null;
+let _ready = null;
 
-module.exports = { createApp };
+async function handler(req, res) {
+  if (!_app) _app = createApp();
+  const providers = require('./providers');
+  if (providers.ensureDatabase) {
+    if (!_ready) _ready = providers.ensureDatabase();
+    await _ready;
+  }
+  return _app(req, res);
+}
+
+module.exports = handler;
+module.exports.createApp = createApp; // named import used by server.js / api/index.js
