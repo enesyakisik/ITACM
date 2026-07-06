@@ -1,7 +1,7 @@
 /** App settings (firebase): company branding + onboarding flag in settings/app. */
 const { db, FieldValue } = require('./firebase');
 const { HttpError } = require('../../utils/httpError');
-const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS } = require('../../utils/defaults');
+const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS } = require('../../utils/defaults');
 
 
 const REF = () => db.collection('settings').doc('app');
@@ -17,6 +17,7 @@ async function getSettings() {
     lifecycles: { ...DEFAULT_LIFECYCLES, ...(s.lifecycles || {}) },
     locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
     defaultLocation: s.defaultLocation || null,
+    specOptions: { ...DEFAULT_SPEC_OPTIONS, ...(s.specOptions || {}) },
   };
 }
 
@@ -28,7 +29,7 @@ function validateLogo(logo) {
   if (logo.length > 400_000) throw HttpError.badRequest('Logo too large — keep it under ~300KB');
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions }) {
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -61,6 +62,15 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
   }
 
   if (defaultLocation !== undefined) patch.defaultLocation = defaultLocation;
+  if (specOptions !== undefined && specOptions !== null) {
+    for (const key of Object.keys(specOptions)) {
+      if (!['cpu', 'ram', 'storage'].includes(key)) throw HttpError.badRequest(`Unknown spec list "${key}"`);
+      if (!Array.isArray(specOptions[key]) || specOptions[key].some((v) => typeof v !== 'string' || !v.trim() || v.length > 60)) {
+        throw HttpError.badRequest(`Spec list "${key}" must be an array of short strings`);
+      }
+    }
+    patch.specOptions = specOptions;
+  }
 
   await REF().set(patch, { merge: true });
   return getSettings();

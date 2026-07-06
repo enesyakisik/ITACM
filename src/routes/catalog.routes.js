@@ -68,4 +68,41 @@ router.delete('/locations/:name', requireRole('Admin', 'Helpdesk'), asyncHandler
   res.json({ success: true, data: { locations: saved.locations, defaultLocation: saved.defaultLocation } });
 }));
 
+/* ---- Hardware spec lists (cpu / ram / storage) — feed the asset form ---- */
+
+/** GET /api/catalog/specs — all three lists (all roles). */
+router.get('/specs', asyncHandler(async (req, res) => {
+  const s = await settingsService.getSettings();
+  res.json({ success: true, data: s.specOptions });
+}));
+
+/** POST /api/catalog/specs — add an entry; body: { type: cpu|ram|storage, value } (Admin/Helpdesk). */
+router.post('/specs', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+  const { type, value } = req.body || {};
+  const val = String(value || '').trim();
+  if (!['cpu', 'ram', 'storage'].includes(type)) throw HttpError.badRequest('type must be cpu, ram or storage');
+  if (!val || val.length > 60) throw HttpError.badRequest('value is required (max 60 chars)');
+  const s = await settingsService.getSettings();
+  if (s.specOptions[type].some((v) => v.toLowerCase() === val.toLowerCase())) {
+    throw HttpError.conflict(`"${val}" already exists in the ${type.toUpperCase()} list`);
+  }
+  const saved = await settingsService.saveSettings({
+    specOptions: { ...s.specOptions, [type]: [...s.specOptions[type], val] },
+  });
+  res.status(201).json({ success: true, data: saved.specOptions });
+}));
+
+/** DELETE /api/catalog/specs/:type/:value — remove an entry (Admin/Helpdesk). */
+router.delete('/specs/:type/:value', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+  const { type, value } = req.params;
+  if (!['cpu', 'ram', 'storage'].includes(type)) throw HttpError.badRequest('type must be cpu, ram or storage');
+  const s = await settingsService.getSettings();
+  if (!s.specOptions[type].includes(value)) throw HttpError.notFound(`"${value}" not found in ${type} list`);
+  if (s.specOptions[type].length <= 1) throw HttpError.badRequest('At least one entry must remain');
+  const saved = await settingsService.saveSettings({
+    specOptions: { ...s.specOptions, [type]: s.specOptions[type].filter((v) => v !== value) },
+  });
+  res.json({ success: true, data: saved.specOptions });
+}));
+
 module.exports = router;

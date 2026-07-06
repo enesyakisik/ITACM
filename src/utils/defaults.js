@@ -20,4 +20,12 @@ const DEFAULT_LOCATIONS = [
   'Service Center',
 ];
 
-module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS };
+/** Default hardware spec lists — feed the asset form dropdowns and report
+ *  filters; managed from the Product Catalog screen. */
+const DEFAULT_SPEC_OPTIONS = {
+  cpu: ['Intel i5-1235U', 'Intel i7-1355U', 'Intel i9-13900H', 'Ryzen 5 5600U', 'Ryzen 7 7840U', 'Apple M2', 'Apple M3'],
+  ram: ['8GB', '16GB', '32GB', '64GB'],
+  storage: ['256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD'],
+};
+
+module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS };

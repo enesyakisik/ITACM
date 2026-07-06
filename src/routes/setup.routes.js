@@ -41,8 +41,8 @@ router.post('/setup', asyncHandler(async (req, res) => {
 }));
 
 router.put('/settings', authenticate, requireRole('Admin'), asyncHandler(async (req, res) => {
-  const { companyName, companyLogo, handoverTerms, lifecycles, locations, defaultLocation } = req.body || {};
-  const saved = await settingsService.saveSettings({ companyName, companyLogo, handoverTerms, lifecycles, locations, defaultLocation });
+  const { companyName, companyLogo, handoverTerms, lifecycles, locations, defaultLocation, specOptions } = req.body || {};
+  const saved = await settingsService.saveSettings({ companyName, companyLogo, handoverTerms, lifecycles, locations, defaultLocation, specOptions });
   res.json({ success: true, data: saved });
 }));
 

@@ -181,3 +181,6 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS locations JSONB;
 -- Physical location of each asset (denormalized string)
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_location TEXT;
+
+-- Hardware spec dropdown lists (cpu/ram/storage); NULL -> defaults
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS spec_options JSONB;

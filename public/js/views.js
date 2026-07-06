@@ -196,11 +196,12 @@ Views.dashboard = async function (el) {
           </div>` : ''}
         </div>
 
-        <!-- Asset distribution by location -->
-        <div class="card" style="margin-bottom:20px">
+        <!-- Asset distribution by location (click for detail popup) -->
+        <div class="card" id="dist-card" style="margin-bottom:20px;cursor:pointer" title="Click for detailed breakdown">
           <div class="card-head" style="border-bottom:none;padding-bottom:0;align-items:flex-start">
             <div><h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Asset Distribution</h3>
-              <div class="cell-sub" style="margin-top:2px">By primary location</div></div>
+              <div class="cell-sub" style="margin-top:2px">By primary location — click for details</div></div>
+            <span class="ms" style="color:var(--outline)">open_in_full</span>
           </div>
           <div class="donut-wrap">${donut}</div>
           <div style="padding-bottom:12px">
@@ -233,10 +234,67 @@ Views.dashboard = async function (el) {
   bindView(el, (e) => {
     const row = e.target.closest('tr[data-open-asset]');
     if (row) { showAssetDetail(row.dataset.openAsset); return; }
+    if (e.target.closest('#dist-card')) { showLocationBreakdown(); return; }
     const b = e.target.closest('[data-go]');
     if (b) location.hash = b.dataset.go;
   });
 };
+
+/* Detailed asset-distribution popup: per-location totals, status split,
+   category mix and value share, with click-through to filtered inventory. */
+async function showLocationBreakdown() {
+  const { items } = await api('/assets?limit=2000');
+  const locs = new Map();
+  for (const x of items) {
+    const key = x.location || 'Unassigned';
+    if (!locs.has(key)) locs.set(key, { total: 0, statuses: {}, categories: {} });
+    const L = locs.get(key);
+    L.total++;
+    L.statuses[x.status] = (L.statuses[x.status] || 0) + 1;
+    L.categories[x.category] = (L.categories[x.category] || 0) + 1;
+  }
+  const rows = [...locs.entries()].sort((a, b) => b[1].total - a[1].total);
+  const grand = items.length || 1;
+  const SC = { 'Assigned': '#3525cd', 'In Stock': '#c3c0ff', 'In Repair': '#f59e0b', 'Scrap': '#ffb4ab' };
+
+  openModal({
+    title: `Asset Distribution by Location (${items.length} assets)`,
+    wide: true,
+    body: rows.map(([name, L]) => {
+      const topCats = Object.entries(L.categories).sort((a, b) => b[1] - a[1]).slice(0, 3)
+        .map(([c, n]) => `${c} ${n}`).join(' • ');
+      return `
+      <div style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span class="ms" style="color:var(--on-surface-variant)">location_on</span>
+          <strong style="font-size:14.5px">${esc(name)}</strong>
+          <span class="cell-sub">${Math.round((L.total / grand) * 100)}% of fleet</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+            <span class="badge-count">${L.total}</span>
+            <button class="btn btn-outline btn-sm" data-loc-view="${esc(name === 'Unassigned' ? '' : name)}">View assets</button>
+          </span>
+        </div>
+        <div style="display:flex;height:10px;border-radius:999px;overflow:hidden;background:var(--surface-container);margin-bottom:8px">
+          ${Object.entries(SC).map(([st, color]) =>
+            L.statuses[st] ? `<span style="width:${(L.statuses[st] / L.total) * 100}%;background:${color}" title="${st}: ${L.statuses[st]}"></span>` : '').join('')}
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap" class="cell-sub">
+          ${Object.entries(SC).map(([st, color]) =>
+            L.statuses[st] ? `<span style="display:flex;align-items:center;gap:5px">
+              <span style="width:8px;height:8px;border-radius:50%;background:${color}"></span>${st}: <strong>${L.statuses[st]}</strong></span>` : '').join('')}
+          <span style="margin-left:auto">${esc(topCats)}</span>
+        </div>
+      </div>`;
+    }).join(''),
+    foot: '<button class="btn btn-outline" data-close>Close</button>',
+    onMount(overlay) {
+      overlay.querySelectorAll('[data-loc-view]').forEach((b) => b.addEventListener('click', () => {
+        closeModal();
+        location.hash = '#/assets' + (b.dataset.locView ? '?location=' + encodeURIComponent(b.dataset.locView) : '');
+      }));
+    },
+  });
+}
 
 /* ================================ ASSETS ================================= */
 Views.assets = async function (el, params = {}) {
@@ -578,9 +636,17 @@ async function assetForm(asset, done) {
           <input name="macEthernet" placeholder="AA:BB:CC:DD:EE:FF" value="${esc((asset && asset.macEthernet) || '')}"></div>
         <div class="form-field" data-f="macWifi"><label>MAC (Wi-Fi)</label>
           <input name="macWifi" placeholder="AA:BB:CC:DD:EE:FF" value="${esc((asset && asset.macWifi) || '')}"></div>
-        <div class="form-field" data-f="cpu"><label>CPU</label><input name="cpu" value="${esc(s.cpu || '')}"></div>
-        <div class="form-field" data-f="ram"><label>RAM</label><input name="ram" value="${esc(s.ram || '')}"></div>
-        <div class="form-field" data-f="storage"><label>Storage</label><input name="storage" value="${esc(s.storage || '')}"></div>
+        ${['cpu', 'ram', 'storage'].map((k) => {
+          const opts = (AppConfig.specOptions || {})[k] || [];
+          const cur = s[k] || '';
+          const known = !cur || opts.includes(cur);
+          return `<div class="form-field" data-f="${k}"><label>${k.toUpperCase()} * <span class="ob-hint">(list managed in Product Catalog)</span></label>
+            <select name="${k}">
+              <option value="">Select ${k.toUpperCase()}…</option>
+              ${known ? '' : `<option selected>${esc(cur)}</option>`}
+              ${opts.map((o) => `<option ${cur === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+            </select></div>`;
+        }).join('')}
         <div class="form-field" data-f="os"><label>OS</label><input name="os" value="${esc(s.os || '')}"></div>
       </div><div id="af-error"></div></form>`,
     foot: `<button class="btn btn-outline" data-close>Cancel</button>
@@ -692,6 +758,13 @@ async function assetForm(asset, done) {
         try {
           if (!body.brand || !body.model) {
             throw new Error('Brand and model are required — pick from the catalog or choose "Other" and type them');
+          }
+          // CPU / RAM / Storage are mandatory whenever the category uses them
+          // (reports filter on these fields).
+          for (const k of ['cpu', 'ram', 'storage']) {
+            if (allowed.includes(k) && !body.specs[k]) {
+              throw new Error(`${k.toUpperCase()} is required for ${state.category} — pick one from the list (manage lists in Product Catalog)`);
+            }
           }
           let created;
           if (asset) await api(`/assets/${asset.id}`, { method: 'PUT', body });
@@ -1383,7 +1456,9 @@ Views.handover = async function (el) {
 async function printHandover(h) {
   let emp = null;
   try {
-    emp = (await api('/employees')).find((e) => e.id === h.employeeId) || null;
+    // limit=1000: the default page (200) was hiding most employees, which
+    // left Department/Position empty on the printed form.
+    emp = (await api('/employees?limit=1000')).find((e) => e.id === h.employeeId) || null;
   } catch { /* print with what we have */ }
 
   const items = h.items || [];
@@ -1460,6 +1535,33 @@ async function printHandover(h) {
           Received By (Employee)<br><small>Teslim Alan (Çalışan)</small>
           <div class="line">${esc(h.employeeName)}</div>
           <small>Signature / İmza</small>
+        </div>
+      </div>
+
+      <div class="r-return">
+        <div class="r-section">Equipment Return / Ekipman İadesi</div>
+        <p class="r-terms" style="margin:0 0 6pt">
+          I confirm that I returned the equipment listed above. This section is signed when the
+          equipment is handed back to the IT department.
+          <em>Yukarıda listelenen ekipmanı iade ettiğimi onaylarım. Bu bölüm, ekipman BT departmanına
+          teslim edildiğinde imzalanır.</em>
+        </p>
+        <div class="r-info" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="f"><small>Return Date / İade Tarihi</small><div>&nbsp;</div></div>
+          <div class="f"><small>Condition on Return / İade Durumu</small><div>&nbsp;</div></div>
+          <div class="f"><small>Missing Items / Eksikler</small><div>&nbsp;</div></div>
+        </div>
+        <div class="r-sigs" style="margin-top:22pt">
+          <div class="sig">
+            Returned By (Employee)<br><small>İade Eden (Çalışan)</small>
+            <div class="line">${esc(h.employeeName)}</div>
+            <small>Signature / İmza</small>
+          </div>
+          <div class="sig">
+            Received Back By (IT Department)<br><small>İade Teslim Alan (BT Departmanı)</small>
+            <div class="line">&nbsp;</div>
+            <small>Name &amp; Signature / Ad ve İmza</small>
+          </div>
         </div>
       </div>
     </div>`).join('');
@@ -1903,6 +2005,28 @@ Views.catalog = async function (el) {
       <div class="table-foot">New assets default to the location marked as Default; each asset's location can be changed on its form.</div>
     </div>`);
 
+  /* ---- Hardware spec lists (cpu / ram / storage) ---- */
+  const specs = await api('/catalog/specs').catch(() => ({ cpu: [], ram: [], storage: [] }));
+  el.insertAdjacentHTML('beforeend', `
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><h3>Hardware Spec Lists</h3>
+        <span class="cell-sub">These lists feed the CPU / RAM / Storage dropdowns on the asset form and the report filters.</span></div>
+      <div class="card-pad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+        ${['cpu', 'ram', 'storage'].map((type) => `
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="gs-section" style="margin:0">${type.toUpperCase()} (${specs[type].length})</span>
+            ${canEdit ? `<button class="btn btn-outline btn-sm" data-addspec="${type}"><span class="ms">add</span></button>` : ''}
+          </div>
+          ${specs[type].map((v) => `
+          <div class="history-item" style="justify-content:space-between">
+            <span>${esc(v)}</span>
+            ${canEdit ? `<button class="icon-btn" style="width:26px;height:26px" data-delspec="${type}" data-val="${esc(v)}" title="Delete"><span class="ms ms-sm">close</span></button>` : ''}
+          </div>`).join('')}
+        </div>`).join('')}
+      </div>
+    </div>`);
+
   if (canEdit) {
     $('#loc-add', el).addEventListener('click', () => formModal({
       title: 'Add office location',
@@ -1928,6 +2052,25 @@ Views.catalog = async function (el) {
         const r = await api('/catalog/locations/default', { method: 'PUT', body: { name: b.dataset.setdef } });
         AppConfig.defaultLocation = r.defaultLocation;
         toast(`Default location set to ${b.dataset.setdef}`, 'success');
+        Views.catalog(el);
+      } else if (b.dataset.addspec) {
+        const type = b.dataset.addspec;
+        formModal({
+          title: `Add ${type.toUpperCase()} option`,
+          fields: [{ name: 'value', label: `${type.toUpperCase()} value *`, required: true, full: true,
+            placeholder: type === 'cpu' ? 'e.g. Intel i7-1455U' : type === 'ram' ? 'e.g. 48GB' : 'e.g. 4TB SSD' }],
+          submitLabel: 'Add to list',
+          async onSubmit(d2) {
+            const r = await api('/catalog/specs', { method: 'POST', body: { type, value: d2.value } });
+            AppConfig.specOptions = r;
+            toast(`"${d2.value}" added to ${type.toUpperCase()} list`, 'success');
+            Views.catalog(el);
+          },
+        });
+      } else if (b.dataset.delspec) {
+        const r = await api(`/catalog/specs/${b.dataset.delspec}/${encodeURIComponent(b.dataset.val)}`, { method: 'DELETE' });
+        AppConfig.specOptions = r;
+        toast('Spec option removed', 'success');
         Views.catalog(el);
       } else if (b.dataset.delloc) {
         confirmModal(`Delete location "${b.dataset.delloc}"? Assets keep their stored location text.`, async () => {
@@ -2111,6 +2254,15 @@ const CUSTOM_SOURCES = {
       { key: 'location', label: 'Location', type: 'select',
         get options() { return ['', ...(AppConfig.locations || [])]; },
         apply: (x, v) => x.location === v },
+      { key: 'cpu', label: 'CPU', type: 'select',
+        get options() { return ['', ...((AppConfig.specOptions || {}).cpu || [])]; },
+        apply: (x, v) => (x.specs && x.specs.cpu) === v },
+      { key: 'ram', label: 'RAM', type: 'select',
+        get options() { return ['', ...((AppConfig.specOptions || {}).ram || [])]; },
+        apply: (x, v) => (x.specs && x.specs.ram) === v },
+      { key: 'storage', label: 'Storage', type: 'select',
+        get options() { return ['', ...((AppConfig.specOptions || {}).storage || [])]; },
+        apply: (x, v) => (x.specs && x.specs.storage) === v },
       { key: 'lifecycle', label: 'Lifecycle', type: 'select',
         options: [{ value: '', label: 'Lifecycle: all' }, { value: 'overdue', label: 'Past EOL (replace)' }, { value: 'ok', label: 'Within lifecycle' }],
         apply: (x, v) => (v === 'overdue' ? lifecycleInfo(x).overdue : !lifecycleInfo(x).overdue) },
