@@ -272,9 +272,10 @@ impossible for two operators to hand over the same laptop concurrently.
   verified with `checkRevoked`; Firestore security rules
   ([firestore.rules](firestore.rules)) give clients read-only access and force
   all writes through this API.
-- **Hardening:** baseline security headers (nosniff, frame-deny, referrer/permissions policies), login
-  rate-limiting (20 attempts / 15 min / IP), 1MB body limit, `x-powered-by` disabled, one-shot onboarding
-  endpoint that locks itself after first use.
+- **Hardening:** strict Content-Security-Policy (no inline scripts), HSTS, nosniff/frame-deny/referrer/
+  permissions-policy headers, login rate-limiting (20 attempts / 15 min / IP), global API rate limit
+  (1000 req / 5 min / IP), same-origin-only CORS by default, 1MB body limit, `x-powered-by` disabled,
+  one-shot onboarding endpoint that locks itself after first use, `npm audit`-clean dependency tree.
 - **Transport:** always front the API with HTTPS (Vercel does this for you;
   use Caddy/Nginx on a VPS). Set `CORS_ORIGINS` to your exact frontend origin.
 

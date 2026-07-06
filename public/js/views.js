@@ -56,13 +56,13 @@ Views.dashboard = async function (el) {
     <div class="banner banner-amber">
       <span class="ms">warning</span>
       <span class="grow">${d.alerts.expiringLicenseCount} Software License${d.alerts.expiringLicenseCount > 1 ? 's' : ''} expiring in 30 days</span>
-      <button class="btn btn-sm btn-banner-amber" onclick="location.hash='#/licenses'">Action</button>
+      <button class="btn btn-sm btn-banner-amber" data-go="#/licenses">Action</button>
     </div>` : ''}
     ${lowest ? `
     <div class="banner banner-rose">
       <span class="ms">error</span>
       <span class="grow">${esc(lowest.itemName)} stock is critically low (${lowest.totalStock} remaining)</span>
-      <button class="btn btn-sm btn-banner-rose" onclick="location.hash='#/consumables'">Reorder</button>
+      <button class="btn btn-sm btn-banner-rose" data-go="#/consumables">Reorder</button>
     </div>` : ''}
 
     <div class="grid grid-4" style="margin:20px 0">
@@ -124,6 +124,11 @@ Views.dashboard = async function (el) {
           </div>`).join('')}
       </div>
     </div>`;
+
+  bindView(el, (e) => {
+    const b = e.target.closest('[data-go]');
+    if (b) location.hash = b.dataset.go;
+  });
 };
 
 /* ================================ ASSETS ================================= */
@@ -622,8 +627,7 @@ async function showAssetDetail(id, onChange) {
         <div><span class="cell-sub">MAC Wi-Fi</span><div class="mono">${esc(x.macWifi || 'N/A')}</div></div>
         <div><span class="cell-sub">Specs</span><div>${esc([s.cpu, s.ram, s.storage, s.os].filter(Boolean).join(' • ') || '—')}</div></div>
         <div><span class="cell-sub">Purchase date</span><div>${fmtDate(x.purchaseDate)}</div></div>
-        <div class="full"><span class="cell-sub">Lifecycle (set per category in Settings)</span>
-          <div>${(() => { const l = lifecycleInfo(x);
+        <div><span class="cell-sub">Lifecycle</span><div>${(() => { const l = lifecycleInfo(x);
             return `${esc(lifecycleLabel(x))} ${l.overdue ? badge('Scrap').replace('Scrap', 'Replace') : ''}`; })()}</div></div>
         <div class="full"><span class="cell-sub">QR code string</span><div class="mono">${esc(x.qrCodeString)}</div></div>
       </div>

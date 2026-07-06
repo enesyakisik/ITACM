@@ -12,9 +12,25 @@ function createApp() {
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // correct req.ip behind reverse proxies
 
-  // Baseline security headers (no external dependency needed)
+  // Baseline security headers (no external dependency needed).
+  // CSP allows only our own code plus Google Fonts and — for firebase mode
+  // client login — the Firebase Web SDK and its auth endpoints.
+  const CSP = [
+    "default-src 'self'",
+    "script-src 'self' https://www.gstatic.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    'font-src https://fonts.gstatic.com',
+    "img-src 'self' data:",
+    "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
   app.use((req, res, next) => {
     res.set({
+      'Content-Security-Policy': CSP,
+      'Strict-Transport-Security': 'max-age=15552000; includeSubDomains',
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
@@ -23,7 +39,24 @@ function createApp() {
     next();
   });
 
-  app.use(cors(config.corsOrigins.length ? { origin: config.corsOrigins } : undefined));
+  // Coarse abuse guard for the whole API: 1000 requests / 5 min / IP.
+  const apiHits = new Map();
+  app.use('/api', (req, res, next) => {
+    const now = Date.now();
+    let entry = apiHits.get(req.ip);
+    if (!entry || now > entry.resetAt) {
+      entry = { count: 0, resetAt: now + 5 * 60 * 1000 };
+      apiHits.set(req.ip, entry);
+    }
+    if (++entry.count > 1000) {
+      return res.status(429).json({ success: false, error: 'Too many requests — slow down' });
+    }
+    if (apiHits.size > 10000) apiHits.clear(); // memory guard
+    next();
+  });
+
+  // CORS: same-origin only unless CORS_ORIGINS is configured explicitly.
+  app.use(cors({ origin: config.corsOrigins.length ? config.corsOrigins : false }));
   app.use(express.json({ limit: '1mb' }));
 
   // Built-in web UI (public/) — served by the same process, no build step.
