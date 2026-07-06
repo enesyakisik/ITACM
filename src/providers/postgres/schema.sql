@@ -184,3 +184,29 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_location TEXT;
 
 -- Hardware spec dropdown lists (cpu/ram/storage); NULL -> defaults
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS spec_options JSONB;
+
+-- Owner role (highest privilege): relax the users.role CHECK constraint
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check
+  CHECK (role IN ('Owner', 'Admin', 'Helpdesk', 'Viewer'));
+
+-- Document storage provider config (Owner-managed): local | sharepoint | gdrive
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS document_storage JSONB;
+
+-- Per-employee handover document archive (generated PDFs + uploaded signed scans)
+CREATE TABLE IF NOT EXISTS handover_documents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  handover_id      UUID REFERENCES handovers(id) ON DELETE SET NULL,
+  employee_id      UUID NOT NULL,
+  employee_name    TEXT,
+  kind             TEXT NOT NULL CHECK (kind IN ('generated', 'scan')),
+  filename         TEXT NOT NULL,
+  mime             TEXT NOT NULL,
+  byte_size        INTEGER NOT NULL,
+  content          BYTEA NOT NULL,
+  uploaded_by      TEXT,
+  uploaded_by_name TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_docs_employee ON handover_documents (employee_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_docs_handover ON handover_documents (handover_id);

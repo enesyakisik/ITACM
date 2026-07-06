@@ -57,7 +57,15 @@ function createApp() {
 
   // CORS: same-origin only unless CORS_ORIGINS is configured explicitly.
   app.use(cors({ origin: config.corsOrigins.length ? config.corsOrigins : false }));
-  app.use(express.json({ limit: '1mb' }));
+
+  // 1MB JSON everywhere, except the document-scan upload route which has its
+  // own larger (12MB) parser — otherwise this global parser would reject the
+  // scan before the route is reached.
+  const jsonSmall = express.json({ limit: '1mb' });
+  app.use((req, res, next) => {
+    if (req.method === 'POST' && /^\/api\/employees\/[^/]+\/documents\/?$/.test(req.path)) return next();
+    return jsonSmall(req, res, next);
+  });
 
   // Built-in web UI (public/) — served by the same process, no build step.
   app.use(express.static(PUBLIC_DIR));
@@ -88,6 +96,7 @@ function createApp() {
   app.use('/api/licenses', require('./routes/licenses.routes'));
   app.use('/api/consumables', require('./routes/consumables.routes'));
   app.use('/api/catalog', require('./routes/catalog.routes'));
+  app.use('/api/documents', require('./routes/documents.routes'));
 
   // API 404s stay JSON; anything else falls back to the SPA shell.
   app.use((req, res, next) => {

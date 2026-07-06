@@ -22,10 +22,10 @@ const fmtDate = (v) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('tr-TR');
 };
 
-/** Streams a PDF for the given handover into `res`. */
-function buildHandoverPdf(res, { handover, employee, settings, deliveredBy }) {
+/** Streams a PDF for the given handover into `stream` (an http response or any writable). */
+function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy }) {
   const doc = new PDFDocument({ size: 'A4', margins: { top: 46, bottom: 46, left: 46, right: 46 } });
-  doc.pipe(res);
+  doc.pipe(stream);
   doc.registerFont('r', F.regular).registerFont('b', F.bold).registerFont('i', F.oblique);
 
   const W = doc.page.width - 92; // content width
@@ -33,127 +33,149 @@ function buildHandoverPdf(res, { handover, employee, settings, deliveredBy }) {
   const groups = handover.documentType === 'separate' ? items.map((i) => [i]) : [items];
   const formNo = 'HF-' + String(handover.id || '').slice(0, 8).toUpperCase();
 
+  const PAGE_BOTTOM = doc.page.height - 40; // 40pt bottom margin
+
   groups.forEach((group, gi) => {
     if (gi > 0) doc.addPage();
-    let y = 46;
+    let y = 44;
 
     /* ---- header ---- */
     const logo = settings.companyLogo;
     if (logo && /^data:image\/(png|jpe?g);base64,/.test(logo)) {
       try {
-        doc.image(Buffer.from(logo.split(',')[1], 'base64'), 46, y, { fit: [44, 44] });
+        doc.image(Buffer.from(logo.split(',')[1], 'base64'), 46, y, { fit: [40, 40] });
       } catch { /* unsupported image — skip */ }
     } else {
-      doc.rect(46, y, 44, 44).lineWidth(1).stroke('#111');
-      doc.font('b').fontSize(20).fillColor('#111')
-        .text((settings.companyName || 'A')[0].toUpperCase(), 46, y + 11, { width: 44, align: 'center' });
+      doc.rect(46, y, 40, 40).lineWidth(1).stroke('#111');
+      doc.font('b').fontSize(18).fillColor('#111')
+        .text((settings.companyName || 'A')[0].toUpperCase(), 46, y + 10, { width: 40, align: 'center' });
     }
-    doc.font('b').fontSize(14).fillColor('#111')
-      .text((settings.companyName || 'IT ASSET CONTROL PRO').toUpperCase(), 100, y + 2, { width: W - 260 });
-    doc.font('r').fontSize(8).fillColor('#444')
-      .text('IT Asset Control Pro — Asset Management', 100, doc.y + 2);
+    doc.font('b').fontSize(13).fillColor('#111')
+      .text((settings.companyName || 'IT ASSET CONTROL PRO').toUpperCase(), 96, y + 2, { width: W - 260 });
+    doc.font('r').fontSize(7.5).fillColor('#444')
+      .text('IT Asset Control Pro — Asset Management', 96, doc.y + 1, { width: W - 260 });
 
     doc.font('b').fontSize(12).fillColor('#111')
       .text('ASSET HANDOVER FORM', 46, y, { width: W, align: 'right' });
-    doc.font('r').fontSize(10).text('(ZİMMET TUTANAĞI)', 46, doc.y + 1, { width: W, align: 'right' });
-    doc.font('r').fontSize(8).fillColor('#333')
+    doc.font('r').fontSize(9.5).text('(ZİMMET TUTANAĞI)', 46, doc.y + 1, { width: W, align: 'right' });
+    doc.font('r').fontSize(7.5).fillColor('#333')
       .text(`Form ID: ${formNo}${groups.length > 1 ? '-' + (gi + 1) : ''}    Date: ${fmtDate(handover.transactionDate)}`,
-        46, doc.y + 3, { width: W, align: 'right' });
+        46, doc.y + 2, { width: W, align: 'right' });
 
-    y = 112;
-    doc.moveTo(46, y).lineTo(46 + W, y).lineWidth(1.6).stroke('#111');
-    y += 14;
+    y = 92;
+    doc.moveTo(46, y).lineTo(46 + W, y).lineWidth(1.4).stroke('#111');
+    y += 11;
 
-    /* ---- employee info ---- */
+    /* ---- helpers ---- */
     const section = (title) => {
-      doc.font('b').fontSize(9).fillColor('#111').text(title.toUpperCase(), 46, y, { width: W });
-      y = doc.y + 3;
-      doc.moveTo(46, y).lineTo(46 + W, y).lineWidth(0.7).stroke('#111');
-      y += 8;
+      doc.font('b').fontSize(8.5).fillColor('#111').text(title.toUpperCase(), 46, y, { width: W });
+      y = doc.y + 2;
+      doc.moveTo(46, y).lineTo(46 + W, y).lineWidth(0.6).stroke('#111');
+      y += 7;
     };
     const infoField = (label, value, x, w) => {
-      doc.font('r').fontSize(7).fillColor('#555').text(label, x, y, { width: w });
-      doc.font('b').fontSize(9.5).fillColor('#111').text(value || '—', x, y + 10, { width: w, lineBreak: false });
-      doc.moveTo(x, y + 24).lineTo(x + w - 14, y + 24).lineWidth(0.5).dash(1.5, { space: 1.5 }).stroke('#666').undash();
+      doc.font('r').fontSize(6.5).fillColor('#555').text(label, x, y, { width: w, lineBreak: false });
+      doc.font('b').fontSize(9).fillColor('#111').text(value || '—', x, y + 9, { width: w, lineBreak: false });
+      doc.moveTo(x, y + 22).lineTo(x + w - 12, y + 22).lineWidth(0.5).dash(1.5, { space: 1.5 }).stroke('#666').undash();
     };
 
+    /* ---- employee info ---- */
     section('Receiving Employee Information');
     const half = W / 2;
     infoField('Full Name / Ad Soyad', handover.employeeName, 46, half);
     infoField('Employee ID / Sicil No', employee ? String(employee.id).slice(0, 8).toUpperCase() : '', 46 + half, half);
-    y += 34;
+    y += 30;
     infoField('Department / Departman', employee && employee.department, 46, half);
     infoField('Position / Ünvan', employee && employee.title, 46 + half, half);
-    y += 40;
+    y += 34;
 
-    /* ---- equipment table ---- */
+    /* ---- equipment table (row height scales so it always fits one page) ---- */
     section('Equipment Details / Ekipman Detayları');
     const cols = [
-      { t: 'No', w: 24 }, { t: 'Category', w: 66 }, { t: 'Brand / Model', w: 138 },
-      { t: 'Serial Number', w: 100 }, { t: 'MAC Address', w: 96 }, { t: 'Condition', w: W - 424 },
+      { t: 'No', w: 22 }, { t: 'Category', w: 62 }, { t: 'Brand / Model', w: 140 },
+      { t: 'Serial Number', w: 100 }, { t: 'MAC Address', w: 92 }, { t: 'Condition', w: W - 416 },
     ];
-    const rowH = 20;
-    const drawRow = (cells, opts = {}) => {
+    // Reserve the space the fixed sections below the table need, then give the
+    // table body whatever's left → the whole form stays on a single page.
+    const RESERVE_BELOW = 300; // terms + delivery sigs + return section
+    const availForBody = PAGE_BOTTOM - y - 18 /*header row*/ - RESERVE_BELOW;
+    const rowH = Math.max(13, Math.min(18, Math.floor(availForBody / Math.max(group.length, 1))));
+    const headH = 17;
+    const drawRow = (cells, h, opts = {}) => {
       let x = 46;
       cells.forEach((cell, ci) => {
-        doc.rect(x, y, cols[ci].w, rowH).lineWidth(0.6).stroke('#444');
-        if (opts.head) doc.rect(x, y, cols[ci].w, rowH).fill('#ecebf5').stroke('#444');
-        doc.font(opts.head ? 'b' : 'r').fontSize(7.5).fillColor('#111')
-          .text(String(cell ?? ''), x + 4, y + 6, { width: cols[ci].w - 8, height: rowH - 8, ellipsis: true, lineBreak: false });
+        if (opts.head) doc.rect(x, y, cols[ci].w, h).fillAndStroke('#ecebf5', '#444');
+        else doc.rect(x, y, cols[ci].w, h).lineWidth(0.6).stroke('#444');
+        doc.font(opts.head ? 'b' : 'r').fontSize(7).fillColor('#111')
+          .text(String(cell ?? ''), x + 3, y + (h - 8) / 2, { width: cols[ci].w - 6, height: 9, ellipsis: true, lineBreak: false });
         x += cols[ci].w;
       });
-      y += rowH;
+      y += h;
     };
-    drawRow(cols.map((c) => c.t), { head: true });
+    drawRow(cols.map((c) => c.t), headH, { head: true });
     group.forEach((i, idx) =>
-      drawRow([idx + 1, i.category || '—', `${i.brand} ${i.model}`, i.serialNumber, i.macAddress || 'N/A', i.conditionNote || 'New']));
-    drawRow([group.length + 1, '', '', '', '', '']); // spare line
-    y += 12;
+      drawRow([idx + 1, i.category || '—', `${i.brand} ${i.model}`, i.serialNumber, i.macAddress || 'N/A', i.conditionNote || 'New'], rowH));
+    y += 10;
 
-    /* ---- terms ---- */
+    /* ---- terms (height-capped so it can never push a second page) ---- */
     section('Terms and Conditions / Şartlar ve Koşullar');
     const paras = String(settings.handoverTerms || '').split(/\n\s*\n/).filter((p) => p.trim());
-    paras.forEach((p, i) => {
-      doc.font(i === 0 ? 'r' : 'i').fontSize(7.5).fillColor('#222')
-        .text(p.trim(), 46, y, { width: W, lineGap: 1.5 });
-      y = doc.y + 5;
+    paras.slice(0, 2).forEach((p, i) => {
+      doc.font(i === 0 ? 'r' : 'i').fontSize(6.8).fillColor('#222')
+        .text(p.trim(), 46, y, { width: W, lineGap: 0.5, height: 42, ellipsis: true });
+      y = doc.y + 3;
     });
-    y += 6;
+    y += 3;
+
+    /* ---- signature helper ---- */
+    const sig = (x, w, topLabel, subLabel, name, underLabel, sy) => {
+      doc.font('r').fontSize(7.5).fillColor('#111').text(topLabel, x, sy, { width: w, align: 'center', lineBreak: false });
+      doc.font('r').fontSize(6.5).fillColor('#555').text(subLabel, x, sy + 9, { width: w, align: 'center', lineBreak: false });
+      const ly = sy + 34;
+      doc.moveTo(x + 12, ly).lineTo(x + w - 12, ly).lineWidth(0.8).stroke('#111');
+      doc.font('b').fontSize(8).fillColor('#111').text(name || ' ', x, ly + 3, { width: w, align: 'center', lineBreak: false });
+      doc.font('r').fontSize(6.5).fillColor('#555').text(underLabel, x, ly + 13, { width: w, align: 'center', lineBreak: false });
+    };
 
     /* ---- delivery signatures ---- */
-    const sig = (x, w, topLabel, subLabel, name, underLabel) => {
-      doc.font('r').fontSize(8).fillColor('#111').text(topLabel, x, y, { width: w, align: 'center' });
-      doc.font('r').fontSize(7).fillColor('#555').text(subLabel, x, doc.y, { width: w, align: 'center' });
-      const ly = y + 46;
-      doc.moveTo(x + 14, ly).lineTo(x + w - 14, ly).lineWidth(0.8).stroke('#111');
-      doc.font('b').fontSize(8.5).fillColor('#111').text(name || ' ', x, ly + 4, { width: w, align: 'center' });
-      doc.font('r').fontSize(7).fillColor('#555').text(underLabel, x, doc.y + 1, { width: w, align: 'center' });
-    };
-    sig(46, W / 2 - 10, 'Delivered By (IT Department)', 'Teslim Eden (BT Departmanı)', deliveredBy || 'IT Department', 'IT Systems Administrator');
-    sig(46 + W / 2 + 10, W / 2 - 10, 'Received By (Employee)', 'Teslim Alan (Çalışan)', handover.employeeName, 'Signature / İmza');
-    y += 78;
+    sig(46, W / 2 - 10, 'Delivered By (IT Department)', 'Teslim Eden (BT Departmanı)', deliveredBy || 'IT Department', 'IT Systems Administrator', y);
+    sig(46 + W / 2 + 10, W / 2 - 10, 'Received By (Employee)', 'Teslim Alan (Çalışan)', handover.employeeName, 'Signature / İmza', y);
+    y += 62;
 
     /* ---- return section (signed when the equipment comes back) ---- */
     section('Equipment Return / Ekipman İadesi');
-    doc.font('r').fontSize(7.5).fillColor('#222')
-      .text('I confirm that I returned the equipment listed above. This section is signed when the equipment is handed back to the IT department.',
-        46, y, { width: W, lineGap: 1.5 });
-    y = doc.y + 2;
-    doc.font('i').fontSize(7.5)
-      .text('Yukarıda listelenen ekipmanı iade ettiğimi onaylarım. Bu bölüm, ekipman BT departmanına teslim edildiğinde imzalanır.',
-        46, y, { width: W, lineGap: 1.5 });
-    y = doc.y + 10;
+    doc.font('r').fontSize(6.8).fillColor('#222')
+      .text('I confirm that I returned the equipment listed above; signed when the equipment is handed back to the IT department. '
+        + 'Yukarıda listelenen ekipmanı iade ettiğimi onaylarım; bu bölüm ekipman BT departmanına teslim edildiğinde imzalanır.',
+        46, y, { width: W, lineGap: 0.5, height: 22, ellipsis: true });
+    y = doc.y + 6;
 
     const third = W / 3;
     infoField('Return Date / İade Tarihi', ' ', 46, third);
     infoField('Condition on Return / İade Durumu', ' ', 46 + third, third);
     infoField('Missing Items / Eksikler', ' ', 46 + third * 2, third);
-    y += 40;
-    sig(46, W / 2 - 10, 'Returned By (Employee)', 'İade Eden (Çalışan)', handover.employeeName, 'Signature / İmza');
-    sig(46 + W / 2 + 10, W / 2 - 10, 'Received Back By (IT Department)', 'İade Teslim Alan (BT Departmanı)', ' ', 'Name & Signature / Ad ve İmza');
+    y += 30;
+    sig(46, W / 2 - 10, 'Returned By (Employee)', 'İade Eden (Çalışan)', handover.employeeName, 'Signature / İmza', y);
+    sig(46 + W / 2 + 10, W / 2 - 10, 'Received Back By (IT Department)', 'İade Teslim Alan (BT Departmanı)', ' ', 'Name & Signature / Ad ve İmza', y);
   });
 
   doc.end();
 }
 
-module.exports = { buildHandoverPdf };
+/** Renders the PDF to an in-memory Buffer (used for the document archive). */
+function renderHandoverPdfBuffer(opts) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const sink = new (require('stream').PassThrough)();
+    sink.on('data', (c) => chunks.push(c));
+    sink.on('end', () => resolve(Buffer.concat(chunks)));
+    sink.on('error', reject);
+    try {
+      buildHandoverPdf(sink, opts);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+module.exports = { buildHandoverPdf, renderHandoverPdfBuffer };

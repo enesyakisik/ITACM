@@ -7,7 +7,7 @@ const { dashboardService } = require('../services');
 router.get(
   '/stats',
   authenticate,
-  requireRole('Admin', 'Helpdesk', 'Viewer'),
+  requireRole('Owner', 'Admin', 'Helpdesk', 'Viewer'),
   asyncHandler(async (req, res) => {
     res.json({ success: true, data: await dashboardService.getDashboardStats() });
   })

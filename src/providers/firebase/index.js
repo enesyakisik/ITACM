@@ -9,5 +9,6 @@ module.exports = {
   licenseService: require('./licenseService'),
   consumableService: require('./consumableService'),
   settingsService: require('./settingsService'),
+  documentService: require('./documentService'),
   catalogService: require('./catalogService'),
 };

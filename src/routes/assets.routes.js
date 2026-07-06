@@ -31,17 +31,17 @@ router.get('/:id/qr', asyncHandler(async (req, res) => {
 }));
 
 /** POST /api/assets — register hardware (Admin/Helpdesk). */
-router.post('/', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await assetService.createAsset(req.body) });
 }));
 
 /** PUT /api/assets/:id — edit hardware (Admin/Helpdesk). */
-router.put('/:id', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.put('/:id', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await assetService.updateAsset(req.params.id, req.body) });
 }));
 
 /** POST /api/assets/:id/return — take an assigned asset back into stock (Admin/Helpdesk). */
-router.post('/:id/return', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/:id/return', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await assetService.returnAsset(req.params.id, req.body, req.user) });
 }));
 

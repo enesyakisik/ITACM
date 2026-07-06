@@ -121,6 +121,19 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .loc-legend .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .loc-legend strong { margin-left: auto; }
 
+/* ---------- Onboarding (two-column hero) ---------- */
+.onboarding-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--sidebar-bg); padding: 24px; }
+.onboarding-wrap { display: grid; grid-template-columns: 1.05fr 460px; gap: 32px; max-width: 1080px; width: 100%; align-items: center; }
+@media (max-width: 900px) { .onboarding-wrap { grid-template-columns: 1fr; } .ob-hero { display: none; } }
+.ob-hero { color: #fff; padding: 8px 8px 8px 0; }
+.ob-hero-title { font-size: 26px; font-weight: 800; line-height: 1.25; letter-spacing: -.01em; margin: 0 0 22px; color: #fff; }
+.ob-features { display: flex; flex-direction: column; gap: 14px; }
+.ob-feat { display: flex; gap: 12px; align-items: flex-start; }
+.ob-feat .ms { color: var(--primary-fixed-dim, #c3c0ff); font-size: 22px; flex: none; margin-top: 1px; }
+.ob-feat strong { display: block; font-size: 14px; color: #fff; }
+.ob-feat span { font-size: 12.5px; color: #aab3c9; line-height: 1.4; }
+.ob-card { width: 460px; max-width: 100%; }
+
 /* ---------- Reports & Analytics (mockup 2) ---------- */
 .rep-kpi { border-radius: var(--radius-xl); padding: 20px; }
 .rep-kpi-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 16px; }

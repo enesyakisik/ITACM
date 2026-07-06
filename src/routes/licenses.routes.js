@@ -11,12 +11,12 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 /** POST /api/licenses — register a license pool (Admin/Helpdesk). */
-router.post('/', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await licenseService.createLicense(req.body) });
 }));
 
 /** POST /api/licenses/:id/seats — atomic seat claim/release; body: { delta: 1 | -1 } (Admin/Helpdesk). */
-router.post('/:id/seats', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/:id/seats', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await licenseService.adjustSeats(req.params.id, req.body.delta) });
 }));
 
@@ -26,7 +26,7 @@ router.get('/assignments', asyncHandler(async (req, res) => {
 }));
 
 /** POST /api/licenses/:id/assign — assign a seat to an employee; body: { employeeId } (Admin/Helpdesk). */
-router.post('/:id/assign', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/:id/assign', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     data: await licenseService.assignLicense(req.params.id, req.body.employeeId, req.user),
@@ -39,7 +39,7 @@ router.get('/:id/assignments', asyncHandler(async (req, res) => {
 }));
 
 /** POST /api/licenses/assignments/:aid/revoke — software zimmet düşürme (Admin/Helpdesk). */
-router.post('/assignments/:aid/revoke', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/assignments/:aid/revoke', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await licenseService.revokeAssignment(req.params.aid, req.user) });
 }));
 

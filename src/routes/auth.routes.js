@@ -42,23 +42,32 @@ router.post('/verify-token', authenticate, asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.getVerifiedProfile(req.user) });
 }));
 
-/** GET /api/auth/users — list IT users (Admin only). */
-router.get('/users', authenticate, requireRole('Admin'), asyncHandler(async (req, res) => {
+// Only an Owner may grant/assign the Owner role.
+function guardOwnerAssignment(req) {
+  if (req.body && req.body.role === 'Owner' && req.user.role !== 'Owner') {
+    throw HttpError.forbidden('Only an Owner can assign the Owner role');
+  }
+}
+
+/** GET /api/auth/users — list IT users (Owner/Admin). */
+router.get('/users', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.listUsers() });
 }));
 
-/** POST /api/auth/users — onboard an IT user with a role (Admin only). */
-router.post('/users', authenticate, requireRole('Admin'), asyncHandler(async (req, res) => {
+/** POST /api/auth/users — onboard an IT user with a role (Owner/Admin). */
+router.post('/users', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+  guardOwnerAssignment(req);
   res.status(201).json({ success: true, data: await authProvider.createItUser(req.body) });
 }));
 
-/** PUT /api/auth/users/:uid/role — approve/change a role (Admin only). */
-router.put('/users/:uid/role', authenticate, requireRole('Admin'), asyncHandler(async (req, res) => {
+/** PUT /api/auth/users/:uid/role — approve/change a role (Owner/Admin; Owner role Owner-only). */
+router.put('/users/:uid/role', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+  guardOwnerAssignment(req);
   res.json({ success: true, data: await authProvider.setUserRole(req.params.uid, req.body.role) });
 }));
 
-/** GET /api/auth/users/:uid/logins — login history for a user (Admin only). */
-router.get('/users/:uid/logins', authenticate, requireRole('Admin'), asyncHandler(async (req, res) => {
+/** GET /api/auth/users/:uid/logins — login history for a user (Owner/Admin). */
+router.get('/users/:uid/logins', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.getLoginLogs(req.params.uid, req.query.limit) });
 }));
 

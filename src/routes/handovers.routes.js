@@ -11,8 +11,10 @@ router.use(authenticate);
  *         items: [{ assetId, conditionNote }] }
  * 409 with a per-asset conflict list if any basket item is not "In Stock".
  */
-router.post('/', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   const receipt = await handoverService.executeHandover(req.body, req.user);
+  // Auto-archive the generated PDF against the employee (best-effort).
+  require('../utils/handoverArchive').archiveReceipt(receipt.handoverId, req.user);
   res.status(201).json({ success: true, data: receipt });
 }));
 
@@ -23,24 +25,11 @@ router.get('/', asyncHandler(async (req, res) => {
 
 /** GET /api/handovers/:id/pdf — download the receipt as a real PDF file. */
 router.get('/:id/pdf', asyncHandler(async (req, res) => {
-  const { handoverService, employeeService, settingsService } = require('../services');
-  const { buildHandoverPdf } = require('../utils/handoverPdf');
-
-  const handover = await handoverService.getHandover(req.params.id);
-  const settings = await settingsService.getSettings();
-  let employee = null;
-  try {
-    employee = (await employeeService.listEmployees({ limit: 1000 }))
-      .find((e) => e.id === handover.employeeId) || null;
-  } catch { /* render without dept/title */ }
-
-  const formNo = 'HF-' + String(handover.id).slice(0, 8).toUpperCase();
+  const { buildReceiptPdf } = require('../utils/handoverArchive');
+  const { buffer, filename } = await buildReceiptPdf(req.params.id);
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="zimmet-${formNo}.pdf"`);
-  buildHandoverPdf(res, {
-    handover, employee, settings,
-    deliveredBy: req.user.username || req.user.email,
-  });
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
 }));
 
 /** GET /api/handovers/:id — one receipt, feeds the Print Preview (Zimmet Tutanağı). */

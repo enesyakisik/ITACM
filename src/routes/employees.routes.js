@@ -1,7 +1,9 @@
-const router = require('express').Router();
+const express = require('express');
+const router = express.Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { employeeService } = require('../services');
+const { employeeService, documentService } = require('../services');
+const { HttpError } = require('../utils/httpError');
 
 router.use(authenticate);
 
@@ -11,7 +13,7 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 /** POST /api/employees — add an employee (Admin/Helpdesk). */
-router.post('/', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await employeeService.createEmployee(req.body) });
 }));
 
@@ -21,8 +23,37 @@ router.get('/:id/history', asyncHandler(async (req, res) => {
 }));
 
 /** PUT /api/employees/:id — edit / deactivate (blocked while assets are held) (Admin/Helpdesk). */
-router.put('/:id', requireRole('Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+router.put('/:id', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await employeeService.updateEmployee(req.params.id, req.body) });
 }));
+
+/* ---- Per-employee handover document archive ---- */
+
+/** GET /api/employees/:id/documents — list archived forms + scans (all roles). */
+router.get('/:id/documents', asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await documentService.listByEmployee(req.params.id) });
+}));
+
+/**
+ * POST /api/employees/:id/documents — upload a signed/scanned form (Owner/Admin/Helpdesk).
+ * Body: { filename, mime, base64, handoverId? }. 12MB JSON limit for scans.
+ */
+router.post('/:id/documents',
+  requireRole('Owner', 'Admin', 'Helpdesk'),
+  express.json({ limit: '12mb' }),
+  asyncHandler(async (req, res) => {
+    const { filename, mime, base64, handoverId } = req.body || {};
+    if (!filename || !base64) throw HttpError.badRequest('filename and base64 are required');
+    const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (mime && !allowed.includes(mime)) throw HttpError.badRequest('Only PDF or image scans are allowed');
+    const buffer = Buffer.from(String(base64).split(',').pop(), 'base64');
+    const saved = await documentService.saveDocument({
+      handoverId, employeeId: req.params.id,
+      employeeName: (req.body && req.body.employeeName) || null,
+      kind: 'scan', filename, mime: mime || 'application/pdf', buffer,
+      uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
+    });
+    res.status(201).json({ success: true, data: saved });
+  }));
 
 module.exports = router;

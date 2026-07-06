@@ -6,6 +6,7 @@
  *  2. users/{uid} Firestore doc    -> used for listings / UI display
  */
 const { db, auth, FieldValue, COLLECTIONS, ROLES } = require('./firebase');
+const { buildPermissions } = require('../../utils/permissions');
 const { HttpError } = require('../../utils/httpError');
 
 function assertValidRole(role) {
@@ -83,13 +84,7 @@ async function getVerifiedProfile(decodedUser) {
     email: decodedUser.email,
     username: profile.username || decodedUser.email,
     role,
-    permissions: {
-      canViewDashboard: true,
-      canManageAssets: role === 'Admin' || role === 'Helpdesk',
-      canExecuteHandovers: role === 'Admin' || role === 'Helpdesk',
-      canManageMaintenance: role === 'Admin' || role === 'Helpdesk',
-      canManageUsers: role === 'Admin',
-    },
+    permissions: buildPermissions(role),
   };
 }
 
@@ -131,18 +126,18 @@ async function upsertAdmin({ username, email, password }) {
     throw HttpError.badRequest('username, email and password are required');
   }
   try {
-    return await createItUser({ username, email, password, role: 'Admin' });
+    return await createItUser({ username, email, password, role: 'Owner' });
   } catch (err) {
     if (err.status !== 409) throw err;
     const existing = await auth.getUserByEmail(email);
     await auth.updateUser(existing.uid, { password, displayName: username });
-    await auth.setCustomUserClaims(existing.uid, { role: 'Admin' });
+    await auth.setCustomUserClaims(existing.uid, { role: 'Owner' });
     await db.collection(COLLECTIONS.USERS).doc(existing.uid).set(
-      { username, email, role: 'Admin' },
+      { username, email, role: 'Owner' },
       { merge: true }
     );
     await auth.revokeRefreshTokens(existing.uid);
-    return { uid: existing.uid, username, email, role: 'Admin' };
+    return { uid: existing.uid, username, email, role: 'Owner' };
   }
 }
 

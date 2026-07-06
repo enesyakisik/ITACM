@@ -40,9 +40,13 @@ router.post('/setup', asyncHandler(async (req, res) => {
   });
 }));
 
-router.put('/settings', authenticate, requireRole('Admin'), asyncHandler(async (req, res) => {
-  const { companyName, companyLogo, handoverTerms, lifecycles, locations, defaultLocation, specOptions } = req.body || {};
-  const saved = await settingsService.saveSettings({ companyName, companyLogo, handoverTerms, lifecycles, locations, defaultLocation, specOptions });
+// Branding & company-level settings are Owner-only. Operational lists
+// (lifecycles, locations, specOptions) are managed by staff via /api/catalog.
+router.put('/settings', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
+  const { companyName, companyLogo, handoverTerms, defaultLocation, documentStorage } = req.body || {};
+  const saved = await settingsService.saveSettings({
+    companyName, companyLogo, handoverTerms, defaultLocation, documentStorage,
+  });
   res.json({ success: true, data: saved });
 }));
 

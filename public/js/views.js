@@ -992,13 +992,16 @@ Views.employees = async function (el, params = {}) {
 async function showEmployeeDetail(emp) {
   if (!emp) return;
   const canEdit = Auth.can('canManageAssets');
-  const [assetsRes, receipts, software, history] = await Promise.all([
+  const canDelDoc = Auth.can('canManageUsers');
+  const [assetsRes, receipts, software, history, documents] = await Promise.all([
     api(`/assets?employeeId=${encodeURIComponent(emp.id)}&status=Assigned&limit=500`),
     api(`/handovers?employeeId=${encodeURIComponent(emp.id)}&limit=20`),
     api(`/licenses/assignments?employeeId=${encodeURIComponent(emp.id)}`),
     api(`/employees/${encodeURIComponent(emp.id)}/history?limit=50`).catch(() => []),
+    api(`/employees/${encodeURIComponent(emp.id)}/documents`).catch(() => []),
   ]);
   const assets = assetsRes.items;
+  const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 
   openModal({
     title: `${emp.fullName} — Assigned Assets`,
@@ -1016,6 +1019,7 @@ async function showEmployeeDetail(emp) {
       <div class="tabs">
         <button class="tab active" data-tab="overview">Overview</button>
         <button class="tab" data-tab="history">Device History (${history.length})</button>
+        <button class="tab" data-tab="documents">Documents (${documents.length})</button>
       </div>
       <div id="tab-overview">
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
@@ -1080,6 +1084,33 @@ async function showEmployeeDetail(emp) {
             <span class="cell-sub">by ${esc(h.changedByName || '—')}</span>
             ${h.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(h.notes)}</span>` : ''}
           </div>`).join('') + '</div>'}
+      </div>
+
+      <div id="tab-documents" class="hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="cell-sub">Handover forms are auto-archived here. Upload signed/scanned copies (PDF or image).</div>
+          ${canEdit ? '<button class="btn btn-primary btn-sm" id="doc-upload-btn"><span class="ms">upload_file</span> Upload scan</button>' : ''}
+        </div>
+        <input type="file" id="doc-file" accept="application/pdf,image/*" class="hidden">
+        ${documents.length === 0 ? '<div class="table-empty">No documents yet. Execute a handover or upload a signed scan.</div>' : `
+        <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
+          <thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
+          <tbody>
+            ${documents.map((d) => `
+            <tr>
+              <td><div style="display:flex;align-items:center;gap:8px">
+                <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
+                <span class="cell-title">${esc(d.filename)}</span></div></td>
+              <td>${d.kind === 'scan' ? '<span class="pill pill-emerald">Signed scan</span>' : '<span class="pill pill-indigo">Generated</span>'}</td>
+              <td class="cell-sub">${fmtKB(d.byteSize || 0)}</td>
+              <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' • ' + esc(d.uploadedByName) : ''}</td>
+              <td class="actions">
+                <a class="btn btn-outline btn-sm" href="/api/documents/${esc(d.id)}/download" data-doc-dl="${esc(d.id)}"><span class="ms">download</span></a>
+                ${canDelDoc ? `<button class="btn btn-outline btn-sm" data-doc-del="${esc(d.id)}"><span class="ms">delete</span></button>` : ''}
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`}
       </div>`,
     foot: `
       <button class="btn btn-outline" data-close>Close</button>
@@ -1091,6 +1122,59 @@ async function showEmployeeDetail(emp) {
         overlay.querySelectorAll('.tab').forEach((t2) => t2.classList.toggle('active', t2 === tb));
         $('#tab-overview', overlay).classList.toggle('hidden', tb.dataset.tab !== 'overview');
         $('#tab-history', overlay).classList.toggle('hidden', tb.dataset.tab !== 'history');
+        $('#tab-documents', overlay).classList.toggle('hidden', tb.dataset.tab !== 'documents');
+      }));
+
+      // Authenticated document download (Bearer token can't ride on a plain <a>).
+      overlay.querySelectorAll('[data-doc-dl]').forEach((a) => a.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+          const resp = await fetch(`/api/documents/${a.dataset.docDl}/download`, { headers: { Authorization: 'Bearer ' + Auth.token } });
+          if (!resp.ok) throw new Error('Download failed');
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const dl = document.createElement('a');
+          dl.href = url;
+          dl.download = (resp.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/)?.[1] || 'document';
+          dl.click();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } catch (err) { toast(err.message, 'error'); }
+      }));
+
+      // Upload a signed/scanned copy.
+      const upBtn = $('#doc-upload-btn', overlay);
+      const upFile = $('#doc-file', overlay);
+      if (upBtn && upFile) {
+        upBtn.addEventListener('click', () => upFile.click());
+        upFile.addEventListener('change', async () => {
+          const file = upFile.files[0];
+          if (!file) return;
+          if (file.size > 12 * 1024 * 1024) { toast('File too large — max 12MB', 'error'); return; }
+          upBtn.disabled = true;
+          try {
+            const base64 = await new Promise((res, rej) => {
+              const r = new FileReader();
+              r.onload = () => res(r.result);
+              r.onerror = rej;
+              r.readAsDataURL(file);
+            });
+            await api(`/employees/${emp.id}/documents`, {
+              method: 'POST',
+              body: { filename: file.name, mime: file.type || 'application/pdf', base64, employeeName: emp.fullName },
+            });
+            toast(`"${file.name}" uploaded to ${emp.fullName}'s archive`, 'success');
+            showEmployeeDetail(emp);
+          } catch (err) { toast(err.message, 'error'); upBtn.disabled = false; }
+        });
+      }
+
+      // Delete an archived document.
+      overlay.querySelectorAll('[data-doc-del]').forEach((b) => b.addEventListener('click', () => {
+        confirmModal('Delete this archived document permanently?', async () => {
+          await api('/documents/' + b.dataset.docDel, { method: 'DELETE' });
+          toast('Document deleted', 'success');
+          showEmployeeDetail(emp);
+        });
       }));
 
       // Software zimmet: assign a license seat to this employee.
@@ -1878,6 +1962,8 @@ Views.consumables = async function (el) {
 /* ================================= USERS ================================= */
 Views.users = async function (el) {
   const items = await api('/auth/users');
+  // Only an Owner may see/assign the Owner role.
+  const roleOptions = Auth.can('canManageOwner') ? ['Owner', 'Admin', 'Helpdesk', 'Viewer'] : ['Admin', 'Helpdesk', 'Viewer'];
   el.innerHTML = `
     ${pageHead('IT Users', 'Manage system operators and their roles.',
       `<button class="btn btn-primary" id="user-new"><span class="ms">person_add</span> New IT User</button>`)}
@@ -1896,8 +1982,8 @@ Views.users = async function (el) {
           <td class="actions">
             <button class="btn btn-outline btn-sm" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}">
               <span class="ms">history</span> Logins</button>
-            <select data-role="${esc(u.uid)}" style="width:auto">
-              ${['Admin', 'Helpdesk', 'Viewer'].map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+            <select data-role="${esc(u.uid)}" style="width:auto" ${(u.role === 'Owner' && !Auth.can('canManageOwner')) ? 'disabled title="Only an Owner can change an Owner"' : ''}>
+              ${roleOptions.map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
             </select>
           </td>
         </tr>`).join('')}
@@ -1910,7 +1996,7 @@ Views.users = async function (el) {
       { name: 'username', label: 'Display name *', required: true },
       { name: 'email', label: 'Email *', type: 'email', required: true },
       { name: 'password', label: 'Password *', type: 'password', required: true },
-      { name: 'role', label: 'Role *', type: 'select', value: 'Helpdesk', options: ['Admin', 'Helpdesk', 'Viewer'] },
+      { name: 'role', label: 'Role *', type: 'select', value: 'Helpdesk', options: roleOptions },
     ],
     submitLabel: 'Create user',
     async onSubmit(d) {
@@ -2053,6 +2139,35 @@ Views.catalog = async function (el) {
         </div>`).join('')}
       </div>
     </div>`);
+
+  /* ---- Product lifecycle durations (moved here from Settings) ---- */
+  const lifecycles = await api('/catalog/lifecycles').catch(() => ({}));
+  el.insertAdjacentHTML('beforeend', `
+    <div class="card" style="margin-top:16px">
+      <div class="card-head"><h3>Product Lifecycle Durations</h3>
+        <span class="cell-sub">Months per category — applied to every asset of that category for EOL flags &amp; reports.</span></div>
+      <div class="card-pad">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
+          ${Object.entries(lifecycles).map(([cat, m]) => `
+          <label style="font-size:12px;font-weight:600;color:var(--on-surface-variant)">${esc(cat)}
+            <input type="number" min="1" max="240" data-lc="${esc(cat)}" value="${Number(m)}"
+              style="margin-top:4px" ${canEdit ? '' : 'disabled'}></label>`).join('')}
+        </div>
+        ${canEdit ? '<button class="btn btn-primary btn-sm" id="lc-save" style="margin-top:14px"><span class="ms">save</span> Save lifecycles</button>' : ''}
+      </div>
+    </div>`);
+
+  if (canEdit) {
+    const lcSave = $('#lc-save', el);
+    if (lcSave) lcSave.addEventListener('click', async () => {
+      try {
+        const body = Object.fromEntries([...el.querySelectorAll('[data-lc]')].map((i) => [i.dataset.lc, Number(i.value) || 1]));
+        const saved = await api('/catalog/lifecycles', { method: 'PUT', body });
+        AppConfig.lifecycles = saved;
+        toast('Lifecycle durations saved', 'success');
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  }
 
   if (canEdit) {
     $('#loc-add', el).addEventListener('click', () => formModal({

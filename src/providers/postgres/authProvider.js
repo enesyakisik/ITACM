@@ -99,7 +99,7 @@ async function createItUser({ username, email, password, role }) {
   }
 }
 
-/** Onboarding: create the Admin account, or reset the seeded one's credentials. */
+/** Onboarding: create the Owner account, or reset the seeded one's credentials. */
 async function upsertAdmin({ username, email, password }) {
   if (!username || !email || !password) {
     throw HttpError.badRequest('username, email and password are required');
@@ -109,13 +109,13 @@ async function upsertAdmin({ username, email, password }) {
   const hash = await bcrypt.hash(password, 12);
   const { rows } = await query(
     `INSERT INTO users (username, email, password_hash, role)
-     VALUES ($1, $2, $3, 'Admin')
+     VALUES ($1, $2, $3, 'Owner')
      ON CONFLICT (email) DO UPDATE
-       SET username = EXCLUDED.username, password_hash = EXCLUDED.password_hash, role = 'Admin'
+       SET username = EXCLUDED.username, password_hash = EXCLUDED.password_hash, role = 'Owner'
      RETURNING id, username, email, role`,
     [username, email.toLowerCase(), hash]
   );
-  return { uid: rows[0].id, username: rows[0].username, email: rows[0].email, role: 'Admin' };
+  return { uid: rows[0].id, username: rows[0].username, email: rows[0].email, role: 'Owner' };
 }
 
 async function setUserRole(uid, role) {

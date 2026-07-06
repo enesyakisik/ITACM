@@ -3,7 +3,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { maintenanceService } = require('../services');
 
-router.use(authenticate, requireRole('Admin', 'Helpdesk'));
+router.use(authenticate, requireRole('Owner', 'Admin', 'Helpdesk'));
 
 /** GET /api/maintenance — repair logs; ?open=true for in-flight repairs, ?assetId= per asset. */
 router.get('/', asyncHandler(async (req, res) => {

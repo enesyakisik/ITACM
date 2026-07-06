@@ -6,7 +6,7 @@ const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_S
 
 async function getSettings() {
   const { rows } = await query(
-    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options FROM app_settings WHERE id = 1'
+    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options, document_storage FROM app_settings WHERE id = 1'
   );
   const s = rows[0] || {};
   return {
@@ -18,6 +18,7 @@ async function getSettings() {
     locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
     defaultLocation: s.default_location || null,
     specOptions: { ...DEFAULT_SPEC_OPTIONS, ...(s.spec_options || {}) },
+    documentStorage: s.document_storage || { provider: 'local' },
   };
 }
 
@@ -51,7 +52,7 @@ function validateSpecOptions(so) {
   }
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage }) {
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -71,13 +72,15 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
        lifecycles     = CASE WHEN $5::jsonb IS NOT NULL THEN $5 ELSE lifecycles END,
        locations      = CASE WHEN $6::jsonb IS NOT NULL THEN $6 ELSE locations END,
        default_location = CASE WHEN $7::text IS NOT NULL THEN NULLIF($7, '__none__') ELSE default_location END,
-       spec_options   = CASE WHEN $8::jsonb IS NOT NULL THEN $8 ELSE spec_options END
+       spec_options   = CASE WHEN $8::jsonb IS NOT NULL THEN $8 ELSE spec_options END,
+       document_storage = CASE WHEN $9::jsonb IS NOT NULL THEN $9 ELSE document_storage END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecycles ? JSON.stringify(lifecycles) : null,
      locations ? JSON.stringify(locations.map((l) => String(l).trim()).filter(Boolean)) : null,
      defaultLocation === null ? '__none__' : (defaultLocation ?? null),
-     specOptions ? JSON.stringify(specOptions) : null]
+     specOptions ? JSON.stringify(specOptions) : null,
+     documentStorage ? JSON.stringify(documentStorage) : null]
   );
   return getSettings();
 }

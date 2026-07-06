@@ -56,7 +56,7 @@ const COLLECTIONS = {
   ASSET_HISTORY: 'assetHistory',
 };
 
-const ROLES = Object.freeze(['Admin', 'Helpdesk', 'Viewer']);
+const ROLES = Object.freeze(['Owner', 'Admin', 'Helpdesk', 'Viewer']);
 
 const ASSET_STATUS = Object.freeze({
   IN_STOCK: 'In Stock',

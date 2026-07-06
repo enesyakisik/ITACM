@@ -24,6 +24,7 @@ const STATUS_PILLS = {
   'Scrap': 'pill-slate',
   'Active': 'pill-emerald',
   'Inactive': 'pill-slate',
+  'Owner': 'pill-rose',
   'Admin': 'pill-indigo',
   'Helpdesk': 'pill-emerald',
   'Viewer': 'pill-slate',

@@ -18,6 +18,7 @@ async function getSettings() {
     locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
     defaultLocation: s.defaultLocation || null,
     specOptions: { ...DEFAULT_SPEC_OPTIONS, ...(s.specOptions || {}) },
+    documentStorage: s.documentStorage || { provider: 'local' },
   };
 }
 
@@ -29,7 +30,7 @@ function validateLogo(logo) {
   if (logo.length > 400_000) throw HttpError.badRequest('Logo too large — keep it under ~300KB');
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage }) {
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -71,6 +72,8 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
     }
     patch.specOptions = specOptions;
   }
+
+  if (documentStorage !== undefined && documentStorage !== null) patch.documentStorage = documentStorage;
 
   await REF().set(patch, { merge: true });
   return getSettings();

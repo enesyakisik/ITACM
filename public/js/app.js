@@ -267,38 +267,54 @@ function showHelp() {
 }
 
 function showSettings() {
-  if (!Auth.can('canManageUsers')) {
-    toast('Only Admins can change instance settings', 'error');
+  if (!Auth.can('canManageBranding')) {
+    toast('Only the Owner can change company & branding settings', 'error');
     return;
   }
   let newLogo = null;
+  const ds = AppConfig.documentStorage || { provider: 'local' };
+  const provField = (id, label, val) =>
+    `<div class="form-field" style="margin-top:8px"><label>${label}</label>
+       <input id="${id}" value="${esc(val || '')}" placeholder="https://…"></div>`;
+
   openModal({
-    title: 'Instance settings',
+    title: 'Company & branding settings',
+    wide: true,
     body: `
-      <div class="form-field" style="margin-bottom:12px">
-        <label>Company name</label>
-        <input id="set-company" value="${esc(AppConfig.companyName || '')}" maxlength="80">
-      </div>
-      <div class="form-field">
-        <label>Company logo (PNG/JPG/SVG, max ~300KB)</label>
-        <input type="file" id="set-logo" accept="image/*">
-      </div>
-      <div id="set-logo-preview" style="margin-top:10px">
-        ${AppConfig.companyLogo ? `<img src="${esc(AppConfig.companyLogo)}" style="max-height:48px;border:1px solid var(--outline-variant);border-radius:4px;padding:4px">` : '<span class="cell-sub">No logo set.</span>'}
-      </div>
-      <div class="form-field" style="margin-top:16px">
-        <label>Product lifecycle durations (months) — set per category, applied to every asset of that category</label>
-        <div id="set-lifecycles" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-          ${Object.entries(AppConfig.lifecycles || {}).map(([cat, m]) => `
-          <label style="font-size:12px;font-weight:600;color:var(--on-surface-variant)">${esc(cat)}
-            <input type="number" min="1" max="240" data-lc="${esc(cat)}" value="${Number(m)}" style="margin-top:3px"></label>`).join('')}
+      <span class="draft-chip" style="background:var(--rose-100);color:var(--rose-800)">Owner only</span>
+      <div class="form-grid" style="margin-top:14px">
+        <div class="form-field">
+          <label>Company name</label>
+          <input id="set-company" value="${esc(AppConfig.companyName || '')}" maxlength="80">
+        </div>
+        <div class="form-field">
+          <label>Company logo (PNG/JPG/SVG, max ~300KB)</label>
+          <input type="file" id="set-logo" accept="image/*">
+          <div id="set-logo-preview" style="margin-top:8px">
+            ${AppConfig.companyLogo ? `<img src="${esc(AppConfig.companyLogo)}" style="max-height:40px;border:1px solid var(--outline-variant);border-radius:4px;padding:4px">` : '<span class="cell-sub">No logo set.</span>'}
+          </div>
+        </div>
+        <div class="form-field full">
+          <label>Handover form terms — printed on every Zimmet Tutanağı.
+            <span class="ob-hint">Separate paragraphs with a blank line; the 2nd paragraph renders italic (TR translation).</span></label>
+          <textarea id="set-terms" rows="6">${esc(AppConfig.handoverTerms || '')}</textarea>
         </div>
       </div>
-      <div class="form-field" style="margin-top:16px">
-        <label>Handover form terms — printed on every Zimmet Tutanağı.
-          <span class="ob-hint">Separate paragraphs with a blank line; the 2nd paragraph renders italic (TR translation).</span></label>
-        <textarea id="set-terms" rows="8">${esc(AppConfig.handoverTerms || '')}</textarea>
-      </div>`,
+
+      <div class="gs-section" style="margin:18px 0 6px">Handover Document Storage</div>
+      <p class="cell-sub" style="margin:0 0 10px">Where signed handover forms are archived. <strong>Local</strong> keeps them
+        in your database (access-controlled, covered by backups). SharePoint / Google Drive route copies to your organization's
+        secure cloud folder.</p>
+      <div class="form-field">
+        <label>Storage provider</label>
+        <select id="set-storage">
+          <option value="local" ${ds.provider === 'local' ? 'selected' : ''}>Local (secure, in-database) — recommended</option>
+          <option value="sharepoint" ${ds.provider === 'sharepoint' ? 'selected' : ''}>Microsoft SharePoint / OneDrive</option>
+          <option value="gdrive" ${ds.provider === 'gdrive' ? 'selected' : ''}>Google Drive</option>
+        </select>
+      </div>
+      <div id="set-storage-extra">${ds.provider && ds.provider !== 'local'
+        ? provField('set-folder', 'Destination folder URL', ds.folderUrl) : ''}</div>`,
     foot: `<button class="btn btn-outline" data-close>Cancel</button>
            <button class="btn btn-primary" id="set-save">Save settings</button>`,
     onMount(overlay) {
@@ -310,28 +326,38 @@ function showSettings() {
         r.onload = () => {
           newLogo = r.result;
           $('#set-logo-preview', overlay).innerHTML =
-            `<img src="${esc(newLogo)}" style="max-height:48px;border:1px solid var(--outline-variant);border-radius:4px;padding:4px">`;
+            `<img src="${esc(newLogo)}" style="max-height:40px;border:1px solid var(--outline-variant);border-radius:4px;padding:4px">`;
         };
         r.readAsDataURL(file);
       });
+      $('#set-storage', overlay).addEventListener('change', (e) => {
+        const v = e.target.value;
+        $('#set-storage-extra', overlay).innerHTML = v === 'local' ? ''
+          : provField('set-folder', 'Destination folder URL', (AppConfig.documentStorage || {}).folderUrl)
+            + `<p class="cell-sub" style="margin-top:6px"><span class="ms ms-sm">lock</span> Cloud sync uses your organization's
+               ${v === 'sharepoint' ? 'SharePoint' : 'Google Drive'} connector; the folder link is stored, credentials are never kept in the app.</p>`;
+      });
       $('#set-save', overlay).addEventListener('click', async () => {
         try {
+          const provider = $('#set-storage', overlay).value;
+          const documentStorage = { provider };
+          const folder = $('#set-folder', overlay);
+          if (provider !== 'local' && folder) documentStorage.folderUrl = folder.value.trim();
           const saved = await api('/settings', {
             method: 'PUT',
             body: {
               companyName: $('#set-company', overlay).value.trim(),
               companyLogo: newLogo || undefined,
               handoverTerms: $('#set-terms', overlay).value,
-              lifecycles: Object.fromEntries([...overlay.querySelectorAll('[data-lc]')]
-                .map((i) => [i.dataset.lc, Number(i.value) || 1])),
+              documentStorage,
             },
           });
           AppConfig.companyName = saved.companyName;
           AppConfig.companyLogo = saved.companyLogo;
           AppConfig.handoverTerms = saved.handoverTerms;
-          AppConfig.lifecycles = saved.lifecycles;
+          AppConfig.documentStorage = saved.documentStorage;
           applyBranding();
-          toast('Settings saved — branding updated', 'success');
+          toast('Settings saved', 'success');
           closeModal();
         } catch (err) { toast(err.message, 'error'); }
       });
