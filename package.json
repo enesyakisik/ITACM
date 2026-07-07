@@ -12,6 +12,9 @@
     "setup": "node scripts/setup.js",
     "migrate": "node src/providers/postgres/migrate.js",
     "seed:demo": "node scripts/seed-demo.js",
+    "backup": "bash scripts/backup.sh",
+    "restore": "bash scripts/restore.sh",
+    "change-db-password": "bash scripts/change-db-password.sh",
     "lint": "node --check server.js && find src scripts -name '*.js' -exec node --check {} +"
   },
   "keywords": [

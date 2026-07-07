@@ -7,6 +7,9 @@ node_modules/
 # Logs
 *.log
 
+# Database backups (may contain personal data — keep them out of git)
+backups/
+
 # OS
 .DS_Store
 

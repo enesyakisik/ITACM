@@ -44,6 +44,14 @@ services:
       PORT: 8000
     ports:
       - "${API_PORT:-8000}:8000"
+    healthcheck:
+      # /api/health returns 503 when the DB is unreachable; wget exits non-zero
+      # on that, so the container is flagged unhealthy. (wget ships in alpine.)
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   db-data:

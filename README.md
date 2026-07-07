@@ -83,6 +83,42 @@ automatically on startup.
 
 ---
 
+## Backup & Recovery
+
+Your entire system — assets, employees, handover receipts, audit history and the
+document archive (scanned/generated PDFs) — lives in PostgreSQL. Back it up
+regularly.
+
+```bash
+npm run backup                 # → backups/itacm-YYYYMMDD-HHMMSS.sql.gz
+npm run restore backups/itacm-20260707-120000.sql.gz   # replaces current data (asks to confirm)
+```
+
+A single dump captures everything (the document archive is stored inside the
+database). Copy the `backups/` folder somewhere safe, or schedule the command
+with cron, e.g. daily at 02:00:
+
+```cron
+0 2 * * *  cd /path/to/ITACM && npm run backup
+```
+
+### Changing the database password
+
+`POSTGRES_PASSWORD` is fixed when the database volume is first created. **Editing
+it in `.env` and restarting will not work** — the API will fail to authenticate.
+To rotate it safely, without losing any data:
+
+```bash
+npm run change-db-password
+```
+
+> ⚠ **Never run `docker compose down -v`.** The `-v` flag deletes the database
+> volume and permanently destroys all your data. If the API ever reports
+> `password authentication failed`, run `npm run change-db-password` (or restore
+> the previous password in `.env`) — do not wipe the volume.
+
+---
+
 ## Configuration reference
 
 | Variable | Required | Description |

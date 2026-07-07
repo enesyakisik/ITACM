@@ -69,9 +69,17 @@ function createApp() {
   // Built-in web UI (public/) — served by the same process, no build step.
   app.use(express.static(PUBLIC_DIR));
 
-  app.get('/api/health', (req, res) =>
-    res.json({ success: true, service: 'itacm-backend', backend: config.backend })
-  );
+  // Liveness + DB readiness. Returns 503 when the database can't answer so that
+  // Docker/orchestrator healthchecks detect a degraded API (process up, DB down).
+  app.get('/api/health', async (req, res) => {
+    const connected = await require('./providers').ping();
+    res.status(connected ? 200 : 503).json({
+      success: connected,
+      service: 'itacm-backend',
+      backend: config.backend,
+      db: { connected },
+    });
+  });
 
   // Public bootstrap info for the UI: branding + onboarding state (no secrets).
   app.get('/api/config', async (req, res) => {

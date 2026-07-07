@@ -81,6 +81,42 @@ otomatik uygulanır.
 
 ---
 
+## Yedekleme ve Kurtarma
+
+Tüm sisteminiz — cihazlar, çalışanlar, zimmet tutanakları, denetim geçmişi ve
+belge arşivi (taranmış/üretilmiş PDF'ler) — PostgreSQL içinde tutulur. Düzenli
+olarak yedek alın.
+
+```bash
+npm run backup                 # → backups/itacm-YYYYMMDD-HHMMSS.sql.gz
+npm run restore backups/itacm-20260707-120000.sql.gz   # mevcut veriyi değiştirir (onay ister)
+```
+
+Tek bir yedek her şeyi kapsar (belge arşivi de veritabanının içindedir).
+`backups/` klasörünü güvenli bir yere kopyalayın veya komutu cron ile
+zamanlayın; ör. her gün 02:00'de:
+
+```cron
+0 2 * * *  cd /path/to/ITACM && npm run backup
+```
+
+### Veritabanı şifresini değiştirme
+
+`POSTGRES_PASSWORD`, veritabanı volume'ü ilk oluşturulduğunda sabitlenir. **`.env`
+içinde değiştirip yeniden başlatmak işe yaramaz** — API kimlik doğrulayamaz.
+Veri kaybı olmadan güvenli şekilde değiştirmek için:
+
+```bash
+npm run change-db-password
+```
+
+> ⚠ **Asla `docker compose down -v` çalıştırmayın.** `-v` bayrağı veritabanı
+> volume'ünü siler ve tüm verinizi kalıcı olarak yok eder. API bir gün
+> `password authentication failed` hatası verirse `npm run change-db-password`
+> çalıştırın (ya da `.env` içindeki eski şifreyi geri koyun) — volume'ü silmeyin.
+
+---
+
 ## Yapılandırma referansı
 
 | Değişken | Zorunlu | Açıklama |
