@@ -3,7 +3,7 @@
  *
  * Runs on every server start:
  *   1. Applies schema.sql — fully idempotent (CREATE ... IF NOT EXISTS).
- *   2. Seeds the first Admin user if the users table is empty.
+ *   2. Seeds the first Owner user if the users table is empty.
  *      Password comes from ADMIN_PASSWORD; if unset, a strong random one is
  *      generated and printed ONCE to the server log.
  */
@@ -36,12 +36,12 @@ async function seedAdmin() {
   const hash = await bcrypt.hash(password, 12);
 
   await query(
-    `INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'Admin')`,
+    `INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, 'Owner')`,
     [config.adminUsername, config.adminEmail.toLowerCase(), hash]
   );
 
   console.log('='.repeat(64));
-  console.log('[itacm] First-run setup: Admin account created');
+  console.log('[itacm] First-run setup: Owner account created');
   console.log(`[itacm]   email:    ${config.adminEmail.toLowerCase()}`);
   if (config.adminPassword) {
     console.log('[itacm]   password: (from ADMIN_PASSWORD env var)');
