@@ -121,18 +121,39 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .loc-legend .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .loc-legend strong { margin-left: auto; }
 
-/* ---------- Onboarding (two-column hero) ---------- */
-.onboarding-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--sidebar-bg); padding: 24px; }
-.onboarding-wrap { display: grid; grid-template-columns: 1.05fr 460px; gap: 32px; max-width: 1080px; width: 100%; align-items: center; }
-@media (max-width: 900px) { .onboarding-wrap { grid-template-columns: 1fr; } .ob-hero { display: none; } }
-.ob-hero { color: #fff; padding: 8px 8px 8px 0; }
-.ob-hero-title { font-size: 26px; font-weight: 800; line-height: 1.25; letter-spacing: -.01em; margin: 0 0 22px; color: #fff; }
-.ob-features { display: flex; flex-direction: column; gap: 14px; }
-.ob-feat { display: flex; gap: 12px; align-items: flex-start; }
-.ob-feat .ms { color: var(--primary-fixed-dim, #c3c0ff); font-size: 22px; flex: none; margin-top: 1px; }
-.ob-feat strong { display: block; font-size: 14px; color: #fff; }
-.ob-feat span { font-size: 12.5px; color: #aab3c9; line-height: 1.4; }
-.ob-card { width: 460px; max-width: 100%; }
+/* ---------- Onboarding (guided feature tour) ---------- */
+.onboarding-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 600px at 50% -10%, #1d2740 0%, var(--sidebar-bg) 60%); padding: 24px; }
+.ob-panel { width: 560px; max-width: 100%; background: #fff; border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.35); padding: 30px 34px 26px; }
+
+.ob-progress { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+.ob-progress-bar { flex: 1; height: 6px; background: var(--surface-container); border-radius: 999px; overflow: hidden; }
+.ob-progress-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--primary-container), var(--primary)); border-radius: 999px; transition: width .35s ease; }
+.ob-skip { border: none; background: none; color: var(--on-surface-variant); font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: var(--font); white-space: nowrap; }
+.ob-skip:hover { color: var(--primary); }
+
+/* a slide */
+.ob-slide { animation: ob-in .3s ease; }
+@keyframes ob-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.ob-slide-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--primary); background: var(--indigo-100); border-radius: 999px; padding: 5px 12px; margin-bottom: 18px; }
+.ob-slide-icon { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(135deg, var(--indigo-100), #dfe1ff); display: flex; align-items: center; justify-content: center; margin-bottom: 18px; }
+.ob-slide-icon .ms { font-size: 34px; color: var(--primary-container); }
+.ob-slide-title { font-size: 24px; font-weight: 800; letter-spacing: -.01em; margin: 0 0 8px; color: var(--on-surface); }
+.ob-slide-desc { font-size: 14.5px; line-height: 1.55; color: var(--on-surface-variant); margin: 0 0 18px; }
+.ob-bullets { list-style: none; padding: 0; margin: 0 0 6px; display: flex; flex-direction: column; gap: 10px; }
+.ob-bullets li { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--on-surface); }
+.ob-bullets .ms { color: var(--emerald-600); font-size: 19px; flex: none; margin-top: 1px; }
+
+/* dots + nav */
+.ob-dots { display: flex; gap: 6px; justify-content: center; margin: 22px 0 16px; }
+.ob-dots span { width: 7px; height: 7px; border-radius: 999px; background: var(--outline-variant); transition: all .25s; cursor: pointer; }
+.ob-dots span.on { background: var(--primary-container); width: 22px; }
+.ob-nav { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
+.ob-nav .btn { flex: 1; justify-content: center; }
+.ob-nav .grow { flex: 1; }
+
+.ob-form { margin-top: 4px; text-align: left; }
+.ob-form label { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); margin-bottom: 12px; }
+.ob-form input:not([type=file]) { margin-top: 4px; }
 
 /* ---------- Reports & Analytics (mockup 2) ---------- */
 .rep-kpi { border-radius: var(--radius-xl); padding: 20px; }
@@ -437,7 +458,16 @@ table.r-items td.mono { font-family: var(--mono); font-size: 8.5pt; }
 @media print {
   body > *:not(.print-root) { display: none !important; }
   .print-root { display: block; }
-  @page { margin: 14mm; }
-  .print-root .receipt { page-break-after: always; }
+  @page { margin: 10mm; }
+  /* Each Zimmet Tutanağı is scaled (via inline zoom, set in printHandover) to
+     fit exactly one A4 page, then forced onto its own sheet. */
+  .print-root .receipt { page-break-after: always; page-break-inside: avoid; }
   .print-root .receipt:last-child { page-break-after: auto; }
+  /* Compact spacing so a typical form needs little or no down-scaling. */
+  .print-root .r-head { margin-bottom: 9pt; padding-bottom: 7pt; }
+  .print-root .r-section { margin: 9pt 0 5pt; }
+  .print-root .r-sigs { margin-top: 22pt; }
+  .print-root .r-sigs .line { margin-top: 26pt; }
+  .print-root .r-return .r-sigs { margin-top: 14pt !important; }
+  .print-root table.r-items th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

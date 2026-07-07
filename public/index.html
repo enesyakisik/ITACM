@@ -12,38 +12,24 @@
 </head>
 <body>
 
-  <!-- ============ ONBOARDING (first run) ============ -->
+  <!-- ============ ONBOARDING (first run) — guided feature tour ============ -->
   <div id="onboarding-screen" class="onboarding-screen hidden">
-    <div class="onboarding-wrap">
-      <!-- left: feature highlights -->
-      <div class="ob-hero">
-        <div class="login-logo" style="margin-bottom:26px">
-          <span class="logo-mark"><span class="ms">inventory_2</span></span>
-          <div>
-            <h1 style="color:#fff">AssetControl</h1>
-            <p style="color:#aab3c9">IT Asset Control Pro</p>
-          </div>
-        </div>
-        <h2 class="ob-hero-title">Everything your IT team needs to run its asset lifecycle.</h2>
-        <div class="ob-features">
-          <div class="ob-feat"><span class="ms">devices</span><div><strong>Hardware Inventory</strong><span>Sequential asset tags, QR codes, categories, locations, warranty &amp; lifecycle tracking.</span></div></div>
-          <div class="ob-feat"><span class="ms">assignment_turned_in</span><div><strong>Handover &amp; Return</strong><span>Atomic zimmet basket → single-page printable/PDF Zimmet Tutanağı with delivery &amp; return signatures.</span></div></div>
-          <div class="ob-feat"><span class="ms">folder_shared</span><div><strong>Document Archive</strong><span>Every handover form is auto-filed per employee; upload signed scans (local, secure).</span></div></div>
-          <div class="ob-feat"><span class="ms">workspace_premium</span><div><strong>Software &amp; Licenses</strong><span>Seat pools, per-employee software zimmet, expiry alerts.</span></div></div>
-          <div class="ob-feat"><span class="ms">build</span><div><strong>Maintenance</strong><span>Repair lifecycle with progress notes flowing into device history.</span></div></div>
-          <div class="ob-feat"><span class="ms">summarize</span><div><strong>Reports &amp; Analytics</strong><span>KPI dashboard, custom report builder, Excel/CSV export.</span></div></div>
-          <div class="ob-feat"><span class="ms">verified_user</span><div><strong>Roles &amp; Security</strong><span>Owner / Admin / Helpdesk / Viewer, audit trail, login history, rate-limiting.</span></div></div>
-        </div>
+    <div class="ob-panel">
+      <!-- progress -->
+      <div class="ob-progress">
+        <div class="ob-progress-bar"><i id="ob-bar"></i></div>
+        <button type="button" id="ob-skip" class="ob-skip">Skip intro →</button>
       </div>
 
-      <!-- right: setup form -->
-      <div class="login-card ob-card">
-        <div style="margin-bottom:6px">
-          <span class="draft-chip" style="background:var(--indigo-100);color:var(--indigo-700)">First-run setup</span>
-        </div>
-        <h2 style="font-size:20px;font-weight:800;margin:8px 0 2px">Create your workspace</h2>
-        <p class="cell-sub" style="margin:0 0 16px">Set your company identity and the <strong>Owner</strong> account — the top-level admin who manages branding, users and settings.</p>
-        <form id="onboarding-form">
+      <!-- feature tour (JS-driven) -->
+      <div id="ob-tour"></div>
+
+      <!-- final step: setup form -->
+      <div id="ob-setup" class="hidden">
+        <div class="ob-slide-icon"><span class="ms">rocket_launch</span></div>
+        <h2 class="ob-slide-title">Create your workspace</h2>
+        <p class="ob-slide-desc">Set your company identity and the <strong>Owner</strong> account — the top-level admin who manages branding, users and settings.</p>
+        <form id="onboarding-form" class="ob-form">
           <h3 class="ob-section">Company</h3>
           <label>Company name *
             <input type="text" name="companyName" required maxlength="80" placeholder="Acme Teknoloji A.Ş.">
@@ -63,11 +49,13 @@
             <input type="password" name="adminPassword" required minlength="8" autocomplete="new-password">
           </label>
           <div id="onboarding-error" class="login-error hidden"></div>
-          <button type="submit" class="btn btn-primary btn-block" id="onboarding-btn">
-            <span class="ms">rocket_launch</span> Complete Setup
-          </button>
+          <div class="ob-nav">
+            <button type="button" class="btn btn-outline" id="ob-form-back"><span class="ms">arrow_back</span> Back</button>
+            <button type="submit" class="btn btn-primary" id="onboarding-btn">
+              <span class="ms">rocket_launch</span> Complete Setup
+            </button>
+          </div>
         </form>
-        <p class="login-footnote">You can change branding, lifecycles, spec lists &amp; document storage anytime from Settings and Product Catalog.</p>
       </div>
     </div>
   </div>

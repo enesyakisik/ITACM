@@ -106,8 +106,140 @@ function showOnboarding() {
 /* ---- onboarding ---- */
 let obLogoDataUrl = null;
 
+// Guided feature tour shown before the setup form.
+const OB_TOUR = [
+  {
+    badge: 'Welcome', icon: 'inventory_2',
+    title: 'Welcome to AssetControl',
+    desc: 'A complete IT asset management platform — hardware, software, handovers, maintenance and reporting, with a built-in web UI. Here\'s a quick tour of what you can do.',
+    bullets: ['Self-hosted & secure', 'Works out of the box', 'No spreadsheets ever again'],
+  },
+  {
+    badge: 'Feature 1', icon: 'devices',
+    title: 'Hardware Inventory',
+    desc: 'Track every device with rich detail and powerful filters.',
+    bullets: [
+      'Auto-assigned sequential asset tags with scannable QR codes',
+      'Category-aware fields, CPU/RAM/Storage from managed lists',
+      'Locations, purchase date & per-category lifecycle (EOL) tracking',
+      'Bulk actions, pagination and global search',
+    ],
+  },
+  {
+    badge: 'Feature 2', icon: 'assignment_turned_in',
+    title: 'Handover & Return',
+    desc: 'Assign devices to employees in one atomic transaction and generate the paperwork instantly.',
+    bullets: [
+      'Zimmet basket → single-page printable / PDF Zimmet Tutanağı',
+      'Delivery AND return signature sections on the same form',
+      'Return devices to stock; every step is audited',
+    ],
+  },
+  {
+    badge: 'Feature 3', icon: 'folder_shared',
+    title: 'Document Archive',
+    desc: 'Every handover form is filed automatically, per employee.',
+    bullets: [
+      'Generated PDFs stored against each person',
+      'Upload signed / scanned copies (PDF or image)',
+      'Kept securely in your database — access-controlled',
+    ],
+  },
+  {
+    badge: 'Feature 4', icon: 'workspace_premium',
+    title: 'Software & Licenses',
+    desc: 'Manage license pools and assign software to people.',
+    bullets: [
+      'Seat pools with atomic claim / release',
+      'Per-employee software zimmet (assign / revoke)',
+      '30-day expiry alerts on the dashboard',
+    ],
+  },
+  {
+    badge: 'Feature 5', icon: 'build',
+    title: 'Maintenance & Repair',
+    desc: 'Full repair lifecycle with a clear paper trail.',
+    bullets: [
+      'Send to repair / return / scrap with state restore',
+      'Add progress notes while a device is in service',
+      'Everything flows into the device history',
+    ],
+  },
+  {
+    badge: 'Feature 6', icon: 'summarize',
+    title: 'Reports & Analytics',
+    desc: 'Understand your fleet at a glance and export anything.',
+    bullets: [
+      'KPI dashboard, inventory growth & status charts',
+      'Custom report builder — 7 sources × columns × filters',
+      'Excel-friendly CSV export and letterhead printing',
+    ],
+  },
+  {
+    badge: 'Feature 7', icon: 'verified_user',
+    title: 'Roles & Security',
+    desc: 'Fine-grained access with a full audit trail.',
+    bullets: [
+      'Owner / Admin / Helpdesk / Viewer roles',
+      'Who-did-what audit log + per-user login history',
+      'CSP, rate-limiting and hardened by default',
+    ],
+  },
+];
+
+let obStep = 0;
+
+function renderTour() {
+  const total = OB_TOUR.length + 1; // +1 for the setup step
+  $('#ob-bar').style.width = `${(obStep / (total - 1)) * 100}%`;
+  $('#ob-skip').style.display = obStep === OB_TOUR.length ? 'none' : '';
+
+  const setup = $('#ob-setup');
+  const tour = $('#ob-tour');
+  if (obStep >= OB_TOUR.length) { // final step → form
+    tour.classList.add('hidden');
+    setup.classList.remove('hidden');
+    return;
+  }
+  setup.classList.add('hidden');
+  tour.classList.remove('hidden');
+
+  const s = OB_TOUR[obStep];
+  const last = obStep === OB_TOUR.length - 1;
+  tour.innerHTML = `
+    <div class="ob-slide">
+      <span class="ob-slide-badge"><span class="ms ms-sm">auto_awesome</span> ${esc(s.badge)}</span>
+      <div class="ob-slide-icon"><span class="ms">${s.icon}</span></div>
+      <h2 class="ob-slide-title">${esc(s.title)}</h2>
+      <p class="ob-slide-desc">${esc(s.desc)}</p>
+      <ul class="ob-bullets">
+        ${s.bullets.map((b) => `<li><span class="ms">check_circle</span> ${esc(b)}</li>`).join('')}
+      </ul>
+      <div class="ob-dots">
+        ${OB_TOUR.map((_, i) => `<span class="${i === obStep ? 'on' : ''}" data-dot="${i}"></span>`).join('')}
+      </div>
+      <div class="ob-nav">
+        <button type="button" class="btn btn-outline" id="ob-back" ${obStep === 0 ? 'disabled' : ''}>
+          <span class="ms">arrow_back</span> Back</button>
+        <button type="button" class="btn btn-primary" id="ob-next">
+          ${last ? 'Set up your workspace' : 'Next'} <span class="ms">arrow_forward</span></button>
+      </div>
+    </div>`;
+
+  $('#ob-back', tour).addEventListener('click', () => { if (obStep > 0) { obStep--; renderTour(); } });
+  $('#ob-next', tour).addEventListener('click', () => { obStep++; renderTour(); });
+  tour.querySelectorAll('[data-dot]').forEach((d) =>
+    d.addEventListener('click', () => { obStep = Number(d.dataset.dot); renderTour(); }));
+}
+
 function bindOnboarding() {
   const form = $('#onboarding-form');
+
+  // Feature tour navigation
+  obStep = 0;
+  renderTour();
+  $('#ob-skip').addEventListener('click', () => { obStep = OB_TOUR.length; renderTour(); });
+  $('#ob-form-back').addEventListener('click', () => { obStep = OB_TOUR.length - 1; renderTour(); });
 
   form.elements.logoFile.addEventListener('change', () => {
     const file = form.elements.logoFile.files[0];

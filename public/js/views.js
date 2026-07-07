@@ -1537,6 +1537,24 @@ Views.handover = async function (el) {
 };
 
 /* Printable receipt — matches the print_preview_handover_form mockup */
+// Scale each receipt so it fits exactly one A4 page. #print-root is display:none
+// off-print, so it's laid out off-screen at the printable width to measure real
+// height, then shrunk via `zoom` (which — unlike transform — reflows layout, so
+// page-break-after actually lands one form per sheet).
+function fitReceiptsToOnePage() {
+  const PRINT_W = 718; // A4 (794px @96dpi) minus 10mm margins each side
+  const PRINT_H = 1000; // A4 usable height @10mm margins, minus safety headroom
+  const pr = $('#print-root');
+  const restore = pr.getAttribute('style') || '';
+  pr.setAttribute('style', 'display:block;position:fixed;left:-10000px;top:0;width:' + PRINT_W + 'px');
+  pr.querySelectorAll('.receipt').forEach((r) => {
+    r.style.zoom = '';
+    const h = r.scrollHeight;
+    if (h > PRINT_H) r.style.zoom = (PRINT_H / h).toFixed(4);
+  });
+  pr.setAttribute('style', restore); // container back to normal; zoom stays on receipts
+}
+
 async function printHandover(h) {
   let emp = null;
   try {
@@ -1674,6 +1692,7 @@ async function printHandover(h) {
         // Print exactly what the user sees (including their inline edits).
         const edited = [...overlay.querySelectorAll('.preview-paper')].map((p) => p.innerHTML).join('');
         $('#print-root').innerHTML = edited;
+        fitReceiptsToOnePage();
         window.print();
       });
       const dl = $('#do-download', overlay);
