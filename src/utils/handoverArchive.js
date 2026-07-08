@@ -11,8 +11,7 @@ async function buildReceiptPdf(handoverId) {
   const settings = await settingsService.getSettings();
   let employee = null;
   try {
-    employee = (await employeeService.listEmployees({ limit: 1000 }))
-      .find((e) => e.id === handover.employeeId) || null;
+    employee = await employeeService.getEmployee(handover.employeeId);
   } catch { /* render without dept/title */ }
 
   const formNo = 'HF-' + String(handover.id).slice(0, 8).toUpperCase();

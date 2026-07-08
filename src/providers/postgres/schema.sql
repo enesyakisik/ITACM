@@ -180,6 +180,10 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS locations JSONB;
 
 -- Physical location of each asset (denormalized string)
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS location TEXT;
+
+-- Optional per-asset lifecycle override in months (NULL -> use the category
+-- default). Lets e.g. MacBooks run a 5-year lifecycle while other laptops use 4.
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS lifecycle_months INTEGER;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_location TEXT;
 
 -- Hardware spec dropdown lists (cpu/ram/storage); NULL -> defaults
@@ -192,6 +196,9 @@ ALTER TABLE users ADD CONSTRAINT users_role_check
 
 -- Document storage provider config (Owner-managed): local | sharepoint | gdrive
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS document_storage JSONB;
+
+-- Customizable Zimmet Tutanağı (handover form) template (Owner-managed).
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS handover_template JSONB;
 
 -- Per-employee handover document archive (generated PDFs + uploaded signed scans)
 CREATE TABLE IF NOT EXISTS handover_documents (

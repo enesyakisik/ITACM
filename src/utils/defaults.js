@@ -8,7 +8,8 @@ Yukarıda listelenen ekipmanları çalışır durumda teslim aldığımı kabul 
  *  managed in Settings and applied to every asset of that category. */
 const DEFAULT_LIFECYCLES = {
   Laptop: 48, Desktop: 60, Monitor: 72, Phone: 36, Tablet: 36,
-  Printer: 60, Network: 84, Peripheral: 36, Other: 48,
+  Printer: 60, Network: 84, Keyboard: 36, Mouse: 36, Headset: 36,
+  'Docking Station': 48, Webcam: 48, Peripheral: 36, Accessory: 36, Other: 48,
 };
 
 /** Default office locations — shown in the asset form and Product Catalog. */
@@ -28,4 +29,31 @@ const DEFAULT_SPEC_OPTIONS = {
   storage: ['256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD'],
 };
 
-module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS };
+/** Default Zimmet Tutanağı (handover form) template — every field is
+ *  customizable from Settings → "Customize Zimmet Template". Honored by both the
+ *  on-screen print (printHandover) and the server-generated PDF (handoverPdf). */
+const DEFAULT_HANDOVER_TEMPLATE = {
+  titleEn: 'ASSET HANDOVER FORM',
+  titleTr: 'ZİMMET TUTANAĞI',
+  subtitle: 'IT Asset Control Pro — Asset Management',
+  showLogo: true,
+  // employee info fields (full name is always shown)
+  showEmployeeId: true,
+  showDepartment: true,
+  showTitle: true,
+  // equipment table columns (No + Brand/Model are always shown)
+  colCategory: true,
+  colSerial: true,
+  colMac: true,
+  colCondition: true,
+  // sections
+  showTerms: true,
+  showReturnSection: true,
+  // signature labels
+  deliveredByLabel: 'Delivered By (IT Department)',
+  receivedByLabel: 'Received By (Employee)',
+  // optional footer line printed under the form
+  footerNote: '',
+};
+
+module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS, DEFAULT_HANDOVER_TEMPLATE };

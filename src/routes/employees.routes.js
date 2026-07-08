@@ -17,6 +17,11 @@ router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (
   res.status(201).json({ success: true, data: await employeeService.createEmployee(req.body) });
 }));
 
+/** GET /api/employees/:id — one employee (all roles). */
+router.get('/:id', asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await employeeService.getEmployee(req.params.id) });
+}));
+
 /** GET /api/employees/:id/history — full device history of one employee (all roles). */
 router.get('/:id/history', asyncHandler(async (req, res) => {
   res.json({ success: true, data: await employeeService.getEmployeeHistory(req.params.id, req.query.limit) });

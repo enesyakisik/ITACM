@@ -19,14 +19,16 @@ function pageHead(title, sub, actionsHtml = '') {
 const CATEGORY_ICONS = {
   Laptop: 'laptop_mac', Desktop: 'desktop_windows', Monitor: 'desktop_windows',
   Phone: 'smartphone', Tablet: 'tablet', Printer: 'print', Network: 'router',
-  Peripheral: 'mouse', Other: 'devices_other',
+  Keyboard: 'keyboard', Mouse: 'mouse', Headset: 'headset_mic', 'Docking Station': 'dock',
+  Webcam: 'videocam', Peripheral: 'mouse', Accessory: 'cable', Other: 'devices_other',
 };
 const catIcon = (c) => CATEGORY_ICONS[c] || 'devices_other';
 
 /** Lifecycle: centrally-managed months per category, applied to every asset. */
 function lifecycleInfo(x) {
   const lc = AppConfig.lifecycles || {};
-  const months = lc[x.category] || lc.Other || 48;
+  // Per-asset override wins over the category default.
+  const months = x.lifecycleMonths || lc[x.category] || lc.Other || 48;
   if (!x.purchaseDate) return { months, eol: null, pct: null, overdue: false };
   const start = new Date(x.purchaseDate._seconds ? x.purchaseDate._seconds * 1000 : x.purchaseDate);
   const eol = new Date(start);
@@ -325,7 +327,7 @@ Views.assets = async function (el, params = {}) {
   const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const page = Math.min(Math.max(1, Number(params.page) || 1), pages);
   const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Peripheral', 'Other'];
+  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
 
   const chips = [];
   if (params.status) chips.push({ key: 'status', label: `Status: ${params.status}` });
@@ -468,9 +470,9 @@ Views.assets = async function (el, params = {}) {
       if (!targets.length) return toast('Selected assets cannot be sent to repair', 'error');
       formModal({
         title: `Send ${targets.length} asset(s) to repair`,
+        // Cost is entered later when each repair is closed (it isn't known yet).
         fields: [
           { name: 'serviceCompany', label: 'Service company *', required: true },
-          { name: 'cost', label: 'Estimated cost (per asset)', type: 'number', step: '0.01' },
           { name: 'issueDescription', label: 'Issue description *', type: 'textarea', required: true, full: true },
         ],
         submitLabel: 'Send all to repair',
@@ -563,9 +565,10 @@ Views.assets = async function (el, params = {}) {
       const x = byId(b.dataset.repair);
       formModal({
         title: `Send ${x.assetTag} to repair`,
+        // Cost is intentionally NOT collected here — the repair bill is only known
+        // later. It is entered when the repair is closed (Maintenance → Close).
         fields: [
           { name: 'serviceCompany', label: 'Service company', required: true },
-          { name: 'cost', label: 'Estimated cost', type: 'number', step: '0.01' },
           { name: 'issueDescription', label: 'Issue description', type: 'textarea', required: true, full: true },
         ],
         submitLabel: 'Send to repair',
@@ -595,7 +598,7 @@ function exportCsv(items) {
 
 async function assetForm(asset, done) {
   const s = (asset && asset.specs) || {};
-  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Peripheral', 'Other'];
+  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
   const catalog = await api('/catalog').catch(() => []);
   const state = {
     category: (asset && asset.category) || 'Laptop',
@@ -619,6 +622,9 @@ async function assetForm(asset, done) {
           <select id="af-cat">${CATS.map((c) => `<option ${state.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
         <div class="form-field"><label>Purchase date</label>
           <input type="date" name="purchaseDate" value="${asset && asset.purchaseDate ? String(asset.purchaseDate).slice(0, 10) : ''}"></div>
+        <div class="form-field"><label>Lifecycle override (months) <span class="ob-hint">(blank = category default, e.g. Mac = 60)</span></label>
+          <input type="number" name="lifecycleMonths" min="1" max="240" placeholder="Category default"
+            value="${asset && asset.lifecycleMonths != null ? asset.lifecycleMonths : ''}"></div>
         <div class="form-field"><label>Location</label>
           <select name="location">
             <option value="">— No location —</option>
@@ -661,7 +667,9 @@ async function assetForm(asset, done) {
         Monitor: [],
         Printer: ['macEthernet', 'macWifi'],
         Network: ['macEthernet'],
-        Peripheral: [],
+        Keyboard: [], Mouse: [], Headset: [], Webcam: [],
+        'Docking Station': ['macEthernet'],
+        Peripheral: [], Accessory: [],
         Other: ['macEthernet', 'macWifi', 'cpu', 'ram', 'storage', 'os'],
       };
       const allowedFields = () => FIELD_RULES[state.category] || FIELD_RULES.Other;
@@ -750,6 +758,7 @@ async function assetForm(asset, done) {
           model: state.model.trim(),
           category: state.category,
           purchaseDate: f.purchaseDate.value || null,
+          lifecycleMonths: f.lifecycleMonths.value ? Number(f.lifecycleMonths.value) : null,
           location: f.location.value || null,
           macEthernet: take('macEthernet'),
           macWifi: take('macWifi'),
@@ -817,7 +826,10 @@ async function showQrModal(asset) {
 }
 
 async function showAssetDetail(id, onChange) {
-  const x = await api(`/assets/${id}`);
+  const [x, repairs] = await Promise.all([
+    api(`/assets/${id}`),
+    api(`/maintenance?assetId=${encodeURIComponent(id)}`).catch(() => []), // Viewer role → 403 → []
+  ]);
   const s = x.specs || {};
   const canEdit = Auth.can('canManageAssets');
   const refresh = () => { if (onChange) onChange(); };
@@ -857,6 +869,22 @@ async function showAssetDetail(id, onChange) {
             <span class="cell-sub">by ${esc(h.changedByName || h.changedBy || '—')}</span>
             ${h.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(h.notes)}</span>` : ''}
           </div>`;
+        }).join('')}
+      <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:18px 0 6px">
+        Repair &amp; Maintenance (${repairs.length})</h3>
+      ${repairs.length === 0 ? '<div class="cell-sub">No repair records for this device.</div>' :
+        repairs.map((m) => {
+          const notes = (m.progressNotes || []).map((n) => (typeof n === 'string' ? n : n.note)).filter(Boolean);
+          return `
+          <div class="history-item" style="flex-wrap:wrap;gap:6px 12px">
+            <span class="when">${fmtDate(m.sentDate)}${m.returnDate ? ' → ' + fmtDate(m.returnDate) : ''}</span>
+            <span class="pill ${m.returnDate ? 'pill-emerald' : 'pill-amber'}">${m.returnDate ? 'Repaired' : 'In Repair'}</span>
+            <span><span class="ms ms-sm" style="color:var(--on-surface-variant);margin-right:4px">build</span><strong>${esc(m.serviceCompany)}</strong></span>
+            <span class="cell-sub">${esc(m.issueDescription)}</span>
+            <span style="margin-left:auto" class="cell-sub">Cost: <strong>${Number(m.cost || 0).toFixed(2)}</strong></span>
+            ${m.resolutionNote ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ Resolution: ${esc(m.resolutionNote)}</span>` : ''}
+            ${notes.length ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ Notes: ${notes.map((n) => esc(n)).join(' · ')}</span>` : ''}
+          </div>`;
         }).join('')}`,
     foot: `
       <button class="btn btn-outline" data-close>Close</button>
@@ -887,9 +915,9 @@ async function showAssetDetail(id, onChange) {
       const adRepair = $('#ad-repair', overlay);
       if (adRepair) adRepair.addEventListener('click', () => formModal({
         title: `Send ${x.assetTag} to repair`,
+        // Cost is entered later when the repair is closed (it isn't known yet).
         fields: [
           { name: 'serviceCompany', label: 'Service company *', required: true },
-          { name: 'cost', label: 'Estimated cost', type: 'number', step: '0.01' },
           { name: 'issueDescription', label: 'Issue description *', type: 'textarea', required: true, full: true },
         ],
         submitLabel: 'Send to repair',
@@ -909,7 +937,7 @@ Views.employees = async function (el, params = {}) {
   const canEdit = Auth.can('canManageAssets');
   const q = new URLSearchParams();
   if (params.search) q.set('search', params.search);
-  q.set('limit', '1000');
+  q.set('limit', '10000'); // load the whole directory; table paginates client-side
   const items = await api('/employees?' + q.toString());
 
   const withAssets = items.filter((x) => x.activeAssetCount > 0).length;
@@ -948,27 +976,50 @@ Views.employees = async function (el, params = {}) {
       </div>
       <div class="table-wrap"><table class="data">
         <thead><tr><th>Employee</th><th>ID / Sicil No</th><th>Department</th><th>Assigned Assets</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
-        <tbody>
-          ${items.length === 0 ? '<tr><td colspan="6" class="table-empty">No employees found.</td></tr>' :
-            items.map((x) => `
-            <tr class="emp-row" data-open="${esc(x.id)}" style="cursor:pointer" title="View assigned assets">
-              <td><div style="display:flex;align-items:center;gap:12px">
-                <span class="avatar">${esc(initials(x.fullName))}</span>
-                <div><div class="cell-title">${esc(x.fullName)}</div><div class="cell-sub">${esc(x.email)}</div></div>
-              </div></td>
-              <td class="mono">${esc(String(x.id).slice(0, 8).toUpperCase())}</td>
-              <td>${esc(x.department || '—')}<div class="cell-sub">${esc(x.title || '')}</div></td>
-              <td><span class="badge-count ${x.activeAssetCount === 0 ? 'zero' : ''}">${x.activeAssetCount}</span></td>
-              <td>${badge(x.status)}</td>
-              <td class="actions">
-                <button class="btn btn-outline btn-sm" data-assets="${esc(x.id)}"><span class="ms">devices</span> Assets</button>
-                ${canEdit ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">Edit</button>` : ''}
-              </td>
-            </tr>`).join('')}
-        </tbody>
+        <tbody id="emp-tbody"></tbody>
       </table></div>
-      <div class="table-foot">Showing 1 to ${items.length} of ${items.length} employees</div>
+      <div class="table-foot" id="emp-foot"></div>
     </div>`;
+
+  /* Client-side pagination over the full directory (50 rows per page). */
+  const PAGE = 50;
+  let page = 1;
+  function renderPage() {
+    const pages = Math.max(1, Math.ceil(items.length / PAGE));
+    page = Math.min(Math.max(1, page), pages);
+    const slice = items.slice((page - 1) * PAGE, page * PAGE);
+    $('#emp-tbody', el).innerHTML = items.length === 0
+      ? '<tr><td colspan="6" class="table-empty">No employees found.</td></tr>'
+      : slice.map((x) => `
+        <tr class="emp-row" data-open="${esc(x.id)}" style="cursor:pointer" title="View assigned assets">
+          <td><div style="display:flex;align-items:center;gap:12px">
+            <span class="avatar">${esc(initials(x.fullName))}</span>
+            <div><div class="cell-title">${esc(x.fullName)}</div><div class="cell-sub">${esc(x.email)}</div></div>
+          </div></td>
+          <td class="mono">${esc(String(x.id).slice(0, 8).toUpperCase())}</td>
+          <td>${esc(x.department || '—')}<div class="cell-sub">${esc(x.title || '')}</div></td>
+          <td><span class="badge-count ${x.activeAssetCount === 0 ? 'zero' : ''}">${x.activeAssetCount}</span></td>
+          <td>${badge(x.status)}</td>
+          <td class="actions">
+            <button class="btn btn-outline btn-sm" data-assets="${esc(x.id)}"><span class="ms">devices</span> Assets</button>
+            ${canEdit ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">Edit</button>` : ''}
+          </td>
+        </tr>`).join('');
+    const from = items.length ? (page - 1) * PAGE + 1 : 0;
+    const to = Math.min(page * PAGE, items.length);
+    const btns = [];
+    for (let p = Math.max(1, page - 2); p <= Math.min(pages, Math.max(1, page - 2) + 4); p++) btns.push(p);
+    $('#emp-foot', el).innerHTML = `Showing ${from} to ${to} of ${items.length.toLocaleString()} employees
+      <span class="spacer"></span>
+      <div class="pager">
+        <button data-pg="${page - 1}" ${page <= 1 ? 'disabled' : ''}>Prev</button>
+        ${btns.map((p) => `<button data-pg="${p}" class="${p === page ? 'on' : ''}">${p}</button>`).join('')}
+        <button data-pg="${page + 1}" ${page >= pages ? 'disabled' : ''}>Next</button>
+      </div>`;
+    $('#emp-foot', el).querySelectorAll('[data-pg]').forEach((b) =>
+      b.addEventListener('click', () => { page = Number(b.dataset.pg); renderPage(); }));
+  }
+  renderPage();
 
   const rerender = (p) => Views.employees(el, { ...params, ...p });
   $('#emp-search', el).addEventListener('change', (e) => rerender({ search: e.target.value }));
@@ -993,14 +1044,27 @@ async function showEmployeeDetail(emp) {
   if (!emp) return;
   const canEdit = Auth.can('canManageAssets');
   const canDelDoc = Auth.can('canManageUsers');
-  const [assetsRes, receipts, software, history, documents] = await Promise.all([
+  const [assetsRes, receipts, allSoftware, history, documents] = await Promise.all([
     api(`/assets?employeeId=${encodeURIComponent(emp.id)}&status=Assigned&limit=500`),
     api(`/handovers?employeeId=${encodeURIComponent(emp.id)}&limit=20`),
-    api(`/licenses/assignments?employeeId=${encodeURIComponent(emp.id)}`),
+    // includeRevoked so past software zimmet also shows in the history timeline.
+    api(`/licenses/assignments?employeeId=${encodeURIComponent(emp.id)}&includeRevoked=true`),
     api(`/employees/${encodeURIComponent(emp.id)}/history?limit=50`).catch(() => []),
     api(`/employees/${encodeURIComponent(emp.id)}/documents`).catch(() => []),
   ]);
   const assets = assetsRes.items;
+  const software = allSoftware.filter((s) => !s.revokedAt); // active only, for the overview
+
+  // Merge device events + software assign/revoke events into one activity timeline.
+  const swEvents = [];
+  allSoftware.forEach((s) => {
+    swEvents.push({ ts: s.assignedAt, type: 'software_assigned', label: s.softwareName, by: s.assignedByName, kind: 'software' });
+    if (s.revokedAt) swEvents.push({ ts: s.revokedAt, type: 'software_revoked', label: s.softwareName, by: s.revokedByName || '', kind: 'software' });
+  });
+  const timeline = [
+    ...history.map((h) => ({ ts: h.timestamp, type: h.actionType, label: h.assetTag, by: h.changedByName, notes: h.notes, kind: 'device' })),
+    ...swEvents,
+  ].sort((a, b) => new Date(b.ts) - new Date(a.ts));
   const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 
   openModal({
@@ -1018,7 +1082,7 @@ async function showEmployeeDetail(emp) {
 
       <div class="tabs">
         <button class="tab active" data-tab="overview">Overview</button>
-        <button class="tab" data-tab="history">Device History (${history.length})</button>
+        <button class="tab" data-tab="history">Activity History (${timeline.length})</button>
         <button class="tab" data-tab="documents">Documents (${documents.length})</button>
       </div>
       <div id="tab-overview">
@@ -1073,16 +1137,18 @@ async function showEmployeeDetail(emp) {
 
       </div>
       <div id="tab-history" class="hidden">
-        <div class="cell-sub" style="margin-bottom:10px">Every device this employee ever held — assignments, returns and repairs.</div>
-        ${history.length === 0 ? '<div class="table-empty">No device history yet.</div>' :
+        <div class="cell-sub" style="margin-bottom:10px">Everything this employee held — device assignments, returns, repairs and software zimmet.</div>
+        ${timeline.length === 0 ? '<div class="table-empty">No activity yet.</div>' :
           `<div style="max-height:340px;overflow-y:auto">` +
-          history.map((h) => `
+          timeline.map((t) => `
           <div class="history-item" style="flex-wrap:wrap">
-            <span class="when">${fmtDateTime(h.timestamp)}</span>
-            <span>${badge(h.actionType)}</span>
-            <span class="mono">${esc(h.assetTag)}</span>
-            <span class="cell-sub">by ${esc(h.changedByName || '—')}</span>
-            ${h.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(h.notes)}</span>` : ''}
+            <span class="when">${fmtDateTime(t.ts)}</span>
+            <span>${t.kind === 'software'
+              ? `<span class="pill ${t.type === 'software_revoked' ? 'pill-rose' : 'pill-indigo'}"><span class="ms ms-sm">vpn_key</span> ${t.type === 'software_revoked' ? 'Software revoked' : 'Software assigned'}</span>`
+              : badge(t.type)}</span>
+            <span class="mono">${esc(t.label)}</span>
+            <span class="cell-sub">by ${esc(t.by || '—')}</span>
+            ${t.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(t.notes)}</span>` : ''}
           </div>`).join('') + '</div>'}
       </div>
 
@@ -1278,14 +1344,17 @@ function employeeForm(emp, done) {
 /* =============================== HANDOVERS =============================== */
 Views.handover = async function (el) {
   const canDo = Auth.can('canExecuteHandovers');
-  const [employees, past] = await Promise.all([
-    api('/employees?status=Active&limit=1000'),
+  const [initialEmps, past] = await Promise.all([
+    api('/employees?status=Active&limit=50'),
     api('/handovers?limit=8'),
   ]);
+  let empList = initialEmps; // current employee search results (fetched server-side)
   let stock = [];
   let stockTotal = 0;
   const basket = new Map(); // assetId -> { asset, note }
-  const state = { emp: null, empFilter: '', hwFilter: '', docType: 'single' };
+  // empObj holds the SELECTED employee object so it survives a new search that
+  // no longer contains them.
+  const state = { emp: null, empObj: null, hwFilter: '', docType: 'single' };
 
   /* ---- static shell: rendered ONCE so search inputs never lose focus ---- */
   el.innerHTML = `
@@ -1371,10 +1440,8 @@ Views.handover = async function (el) {
   /* ---- partial renderers ---- */
   function renderEmps() {
     const list = $('#ho-emp-list', el);
-    const emps = employees.filter((p) =>
-      !state.empFilter || [p.fullName, p.email, p.department].join(' ').toLowerCase().includes(state.empFilter));
-    list.innerHTML = (emps.length === 0 ? '<div class="table-empty">No matching employees.</div>' :
-      emps.slice(0, 50).map((p) => `
+    list.innerHTML = (empList.length === 0 ? '<div class="table-empty">No matching employees.</div>' :
+      empList.map((p) => `
       <div class="emp-option ${state.emp === p.id ? 'selected' : ''}" data-emp="${esc(p.id)}">
         <span class="avatar">${esc(initials(p.fullName))}</span>
         <div class="grow">
@@ -1383,13 +1450,24 @@ Views.handover = async function (el) {
         </div>
         <span class="emp-radio"></span>
       </div>`).join('')) +
-      (emps.length > 50 ? `<div class="cell-sub" style="padding:8px 2px">Showing first 50 of ${emps.length} — refine the search…</div>` : '');
+      (empList.length >= 50 ? `<div class="cell-sub" style="padding:8px 2px">Showing first 50 — type a name to search all employees…</div>` : '');
     list.querySelectorAll('[data-emp]').forEach((r) => r.addEventListener('click', () => {
       state.emp = r.dataset.emp;
+      state.empObj = empList.find((p) => p.id === r.dataset.emp) || state.empObj;
       renderEmps();
       renderSelEmp();
       renderBasket();
     }));
+  }
+
+  /* Server-side employee search (debounced) so all employees are reachable,
+     not just a client-filtered slice of the first page. */
+  let empSearchTimer = null;
+  async function searchEmps(term) {
+    const q = new URLSearchParams({ status: 'Active', limit: '50' });
+    if (term) q.set('search', term);
+    try { empList = await api('/employees?' + q.toString()); } catch { empList = []; }
+    renderEmps();
   }
 
   async function loadStock() {
@@ -1428,7 +1506,7 @@ Views.handover = async function (el) {
 
   function renderSelEmp() {
     const box = $('#ho-sel-emp', el);
-    const p = employees.find((x) => x.id === state.emp);
+    const p = state.empObj;
     if (!p) {
       box.innerHTML = `
         <div class="card card-pad" style="border-style:dashed;text-align:center;color:var(--outline);padding:22px">
@@ -1455,6 +1533,7 @@ Views.handover = async function (el) {
       </div>`;
     $('#ho-clear-emp', box).addEventListener('click', () => {
       state.emp = null;
+      state.empObj = null;
       renderEmps();
       renderSelEmp();
       renderBasket();
@@ -1462,7 +1541,7 @@ Views.handover = async function (el) {
   }
 
   function renderBasket() {
-    const selEmp = employees.find((p) => p.id === state.emp);
+    const selEmp = state.empObj;
     $('#ho-basket-sub', el).textContent =
       `${basket.size} item${basket.size === 1 ? '' : 's'} selected${selEmp ? ' for ' + selEmp.fullName : ''}`;
     $('#ho-basket-count', el).textContent = basket.size;
@@ -1498,8 +1577,9 @@ Views.handover = async function (el) {
 
   /* ---- static bindings (attached once — inputs keep focus while typing) ---- */
   $('#ho-emp-search', el).addEventListener('input', (e) => {
-    state.empFilter = e.target.value.toLowerCase();
-    renderEmps();
+    const term = e.target.value.trim();
+    clearTimeout(empSearchTimer);
+    empSearchTimer = setTimeout(() => searchEmps(term), 220);
   });
   let hwTimer;
   $('#ho-hw-search', el).addEventListener('input', (e) => {
@@ -1555,12 +1635,107 @@ function fitReceiptsToOnePage() {
   pr.setAttribute('style', restore); // container back to normal; zoom stays on receipts
 }
 
+/* One Zimmet Tutanağı receipt as HTML — honors the customizable template (tpl).
+   Shared by the on-screen print (printHandover) and the template customizer preview. */
+function handoverReceiptHTML(ctx, tpl) {
+  const infoField = (label, value) => `<div class="f"><small>${esc(label)}</small><div>${esc(value || '—')}</div></div>`;
+  const empFields = [infoField('Full Name / Ad Soyad', ctx.employeeName)];
+  if (tpl.showEmployeeId) empFields.push(infoField('Employee ID / Sicil No', ctx.employeeId));
+  if (tpl.showDepartment) empFields.push(infoField('Department / Departman', ctx.department));
+  if (tpl.showTitle) empFields.push(infoField('Position / Ünvan', ctx.title));
+
+  const cols = [{ h: 'No', w: 'width:24pt', cell: (i, idx) => idx + 1 }];
+  if (tpl.colCategory) cols.push({ h: 'Category', cell: (i) => esc(i.category || '—') });
+  cols.push({ h: 'Brand / Model', cell: (i) => `${esc(i.brand)} ${esc(i.model)}` });
+  if (tpl.colSerial) cols.push({ h: 'Serial Number', cls: 'mono', cell: (i) => esc(i.serialNumber) });
+  if (tpl.colMac) cols.push({ h: 'MAC Address', cls: 'mono', cell: (i) => esc(i.macAddress || 'N/A') });
+  if (tpl.colCondition) cols.push({ h: 'Condition', cell: (i) => esc(i.conditionNote || 'New') });
+  const thead = `<tr>${cols.map((c) => `<th${c.w ? ` style="${c.w}"` : ''}>${esc(c.h)}</th>`).join('')}</tr>`;
+  const bodyRows = (ctx.items || []).map((i, idx) =>
+    `<tr>${cols.map((c) => `<td${c.cls ? ` class="${c.cls}"` : ''}>${c.cell(i, idx)}</td>`).join('')}</tr>`).join('');
+  const blankRow = `<tr>${cols.map(() => '<td>&nbsp;</td>').join('')}</tr>`;
+
+  return `
+    <div class="receipt">
+      <div class="r-head">
+        <div class="co">
+          ${tpl.showLogo ? `<div class="r-logo">${ctx.companyLogo
+            ? `<img src="${esc(ctx.companyLogo)}" style="max-width:100%;max-height:100%;object-fit:contain" alt="logo">`
+            : esc((ctx.companyName || 'A')[0].toUpperCase())}</div>` : ''}
+          <div>
+            <h1>${esc((ctx.companyName || 'IT ASSET CONTROL PRO').toUpperCase())}</h1>
+            ${tpl.subtitle ? `<small>${esc(tpl.subtitle)}</small>` : ''}
+          </div>
+        </div>
+        <div class="r-title">
+          <h2>${esc(tpl.titleEn || 'ASSET HANDOVER FORM')}</h2>
+          ${tpl.titleTr ? `<div class="tr">(${esc(tpl.titleTr)})</div>` : ''}
+          <span class="mono">Form ID: ${esc(ctx.formNo)}${esc(ctx.formSuffix || '')}<br>Date: ${esc(ctx.dateStr)}</span>
+        </div>
+      </div>
+
+      <div class="r-section">Receiving Employee Information</div>
+      <div class="r-info">${empFields.join('')}</div>
+
+      <div class="r-section">Equipment Details / Ekipman Detayları</div>
+      <table class="r-items">
+        <thead>${thead}</thead>
+        <tbody>${bodyRows}${blankRow}</tbody>
+      </table>
+
+      ${tpl.showTerms ? `<div class="r-section" style="border-bottom:none;margin-bottom:4pt">Terms and Conditions / Şartlar ve Koşullar:</div>
+      <div class="r-terms">${ctx.termsHtml || ''}</div>` : ''}
+
+      <div class="r-sigs">
+        <div class="sig">
+          ${esc(tpl.deliveredByLabel || 'Delivered By (IT Department)')}<br><small>Teslim Eden (BT Departmanı)</small>
+          <div class="line">${esc(ctx.deliveredByName || 'IT Department')}</div>
+          <small>IT Systems Administrator</small>
+        </div>
+        <div class="sig">
+          ${esc(tpl.receivedByLabel || 'Received By (Employee)')}<br><small>Teslim Alan (Çalışan)</small>
+          <div class="line">${esc(ctx.employeeName)}</div>
+          <small>Signature / İmza</small>
+        </div>
+      </div>
+
+      ${tpl.showReturnSection ? `<div class="r-return">
+        <div class="r-section">Equipment Return / Ekipman İadesi</div>
+        <p class="r-terms" style="margin:0 0 6pt">
+          I confirm that I returned the equipment listed above. This section is signed when the
+          equipment is handed back to the IT department.
+          <em>Yukarıda listelenen ekipmanı iade ettiğimi onaylarım. Bu bölüm, ekipman BT departmanına
+          teslim edildiğinde imzalanır.</em>
+        </p>
+        <div class="r-info" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="f"><small>Return Date / İade Tarihi</small><div>&nbsp;</div></div>
+          <div class="f"><small>Condition on Return / İade Durumu</small><div>&nbsp;</div></div>
+          <div class="f"><small>Missing Items / Eksikler</small><div>&nbsp;</div></div>
+        </div>
+        <div class="r-sigs" style="margin-top:22pt">
+          <div class="sig">
+            Returned By (Employee)<br><small>İade Eden (Çalışan)</small>
+            <div class="line">${esc(ctx.employeeName)}</div>
+            <small>Signature / İmza</small>
+          </div>
+          <div class="sig">
+            Received Back By (IT Department)<br><small>İade Teslim Alan (BT Departmanı)</small>
+            <div class="line">&nbsp;</div>
+            <small>Name &amp; Signature / Ad ve İmza</small>
+          </div>
+        </div>
+      </div>` : ''}
+
+      ${tpl.footerNote ? `<p style="text-align:center;font-size:8pt;color:#555;margin-top:10pt;font-style:italic">${esc(tpl.footerNote)}</p>` : ''}
+    </div>`;
+}
+
 async function printHandover(h) {
   let emp = null;
   try {
-    // limit=1000: the default page (200) was hiding most employees, which
-    // left Department/Position empty on the printed form.
-    emp = (await api('/employees?limit=1000')).find((e) => e.id === h.employeeId) || null;
+    // Fetch the one employee directly so Department/Position fill in on the form
+    // regardless of company size.
+    emp = await api('/employees/' + encodeURIComponent(h.employeeId)).catch(() => null);
   } catch { /* print with what we have */ }
 
   const items = h.items || [];
@@ -1578,95 +1753,16 @@ async function printHandover(h) {
       : `<em>${esc(p.trim())}</em>`)
     .join('');
 
-  const infoField = (label, value) => `<div class="f"><small>${label}</small><div>${esc(value || '—')}</div></div>`;
-
-  $('#print-root').innerHTML = groups.map((group, gi) => `
-    <div class="receipt">
-      <div class="r-head">
-        <div class="co">
-          <div class="r-logo">${AppConfig.companyLogo
-            ? `<img src="${esc(AppConfig.companyLogo)}" style="max-width:100%;max-height:100%;object-fit:contain" alt="logo">`
-            : esc((AppConfig.companyName || 'A')[0].toUpperCase())}</div>
-          <div>
-            <h1>${esc((AppConfig.companyName || 'IT ASSET CONTROL PRO').toUpperCase())}</h1>
-            <small>IT Asset Control Pro — Asset Management</small>
-          </div>
-        </div>
-        <div class="r-title">
-          <h2>ASSET HANDOVER FORM</h2>
-          <div class="tr">(ZİMMET TUTANAĞI)</div>
-          <span class="mono">Form ID: ${esc(formNo)}${groups.length > 1 ? '-' + (gi + 1) : ''}<br>Date: ${esc(dateStr)}</span>
-        </div>
-      </div>
-
-      <div class="r-section">Receiving Employee Information</div>
-      <div class="r-info">
-        ${infoField('Full Name / Ad Soyad', h.employeeName)}
-        ${infoField('Employee ID / Sicil No', emp ? String(emp.id).slice(0, 8).toUpperCase() : '')}
-        ${infoField('Department / Departman', emp && emp.department)}
-        ${infoField('Position / Ünvan', emp && emp.title)}
-      </div>
-
-      <div class="r-section">Equipment Details / Ekipman Detayları</div>
-      <table class="r-items">
-        <thead><tr><th style="width:24pt">No</th><th>Category</th><th>Brand / Model</th><th>Serial Number</th><th>MAC Address</th><th>Condition</th></tr></thead>
-        <tbody>
-          ${group.map((i, idx) => `
-          <tr>
-            <td>${idx + 1}</td>
-            <td>${esc(i.category || '—')}</td>
-            <td>${esc(i.brand)} ${esc(i.model)}</td>
-            <td class="mono">${esc(i.serialNumber)}</td>
-            <td class="mono">${esc(i.macAddress || 'N/A')}</td>
-            <td>${esc(i.conditionNote || 'New')}</td>
-          </tr>`).join('')}
-          <tr><td>${group.length + 1}</td><td></td><td></td><td></td><td></td><td></td></tr>
-        </tbody>
-      </table>
-
-      <div class="r-section" style="border-bottom:none;margin-bottom:4pt">Terms and Conditions / Şartlar ve Koşullar:</div>
-      <div class="r-terms">${termsHtml}</div>
-
-      <div class="r-sigs">
-        <div class="sig">
-          Delivered By (IT Department)<br><small>Teslim Eden (BT Departmanı)</small>
-          <div class="line">${esc((Auth.profile && Auth.profile.username) || 'IT Department')}</div>
-          <small>IT Systems Administrator</small>
-        </div>
-        <div class="sig">
-          Received By (Employee)<br><small>Teslim Alan (Çalışan)</small>
-          <div class="line">${esc(h.employeeName)}</div>
-          <small>Signature / İmza</small>
-        </div>
-      </div>
-
-      <div class="r-return">
-        <div class="r-section">Equipment Return / Ekipman İadesi</div>
-        <p class="r-terms" style="margin:0 0 6pt">
-          I confirm that I returned the equipment listed above. This section is signed when the
-          equipment is handed back to the IT department.
-          <em>Yukarıda listelenen ekipmanı iade ettiğimi onaylarım. Bu bölüm, ekipman BT departmanına
-          teslim edildiğinde imzalanır.</em>
-        </p>
-        <div class="r-info" style="grid-template-columns:1fr 1fr 1fr">
-          <div class="f"><small>Return Date / İade Tarihi</small><div>&nbsp;</div></div>
-          <div class="f"><small>Condition on Return / İade Durumu</small><div>&nbsp;</div></div>
-          <div class="f"><small>Missing Items / Eksikler</small><div>&nbsp;</div></div>
-        </div>
-        <div class="r-sigs" style="margin-top:22pt">
-          <div class="sig">
-            Returned By (Employee)<br><small>İade Eden (Çalışan)</small>
-            <div class="line">${esc(h.employeeName)}</div>
-            <small>Signature / İmza</small>
-          </div>
-          <div class="sig">
-            Received Back By (IT Department)<br><small>İade Teslim Alan (BT Departmanı)</small>
-            <div class="line">&nbsp;</div>
-            <small>Name &amp; Signature / Ad ve İmza</small>
-          </div>
-        </div>
-      </div>
-    </div>`).join('');
+  const tpl = AppConfig.handoverTemplate || {};
+  $('#print-root').innerHTML = groups.map((group, gi) => handoverReceiptHTML({
+    companyName: AppConfig.companyName, companyLogo: AppConfig.companyLogo,
+    formNo, formSuffix: groups.length > 1 ? '-' + (gi + 1) : '', dateStr,
+    employeeName: h.employeeName,
+    employeeId: emp ? String(emp.id).slice(0, 8).toUpperCase() : '',
+    department: emp && emp.department, title: emp && emp.title,
+    deliveredByName: (Auth.profile && Auth.profile.username) || 'IT Department',
+    termsHtml, items: group,
+  }, tpl)).join('');
 
   // On-screen print preview (matches the print_preview mockup). Calling
   // window.print() directly can be silently blocked in embedded webviews,
@@ -1895,8 +1991,15 @@ Views.licenses = async function (el) {
             <span class="cell-sub">${fmtDate(a.assignedAt)} • by ${esc(a.assignedByName || '—')}</span>
             ${canEdit ? `<button class="btn btn-outline btn-sm" data-revoke-lic="${esc(a.id)}">Revoke</button>` : ''}
           </div>`).join(''),
-        foot: '<button class="btn btn-outline" data-close>Close</button>',
+        foot: `<button class="btn btn-outline" data-close>Close</button>
+          ${assignments.length ? '<button class="btn btn-primary" id="lic-export"><span class="ms">download</span> Export CSV</button>' : ''}`,
         onMount(overlay) {
+          const exp = $('#lic-export', overlay);
+          if (exp) exp.addEventListener('click', () => csvDownload(
+            `${l.softwareName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-assignments-${new Date().toISOString().slice(0, 10)}.csv`,
+            ['Software', 'Employee', 'Email', 'Department', 'Assigned At', 'Assigned By'],
+            assignments.map((a) => [l.softwareName, a.employeeName, a.employeeEmail || '', a.department || '', fmtDate(a.assignedAt), a.assignedByName || ''])
+          ));
           overlay.querySelectorAll('[data-revoke-lic]').forEach((rb) => rb.addEventListener('click', async () => {
             try {
               const r = await api(`/licenses/assignments/${rb.dataset.revokeLic}/revoke`, { method: 'POST' });
@@ -2092,7 +2195,7 @@ Views.catalog = async function (el) {
       title: 'Add catalog model',
       fields: [
         { name: 'category', label: 'Category *', type: 'select', required: true, value: 'Laptop',
-          options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Peripheral', 'Other'] },
+          options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'] },
         { name: 'brand', label: 'Brand *', required: true },
         { name: 'model', label: 'Model *', required: true, full: true },
       ],
@@ -2296,58 +2399,218 @@ function csvDownload(filename, cols, rows) {
 }
 
 const REPORT_DEFS = [
-  { id: 'inventory', icon: 'devices', tone: 'indigo', title: 'Full Inventory Report',
-    desc: 'Every asset with status, holder, purchase date and identifiers.' },
-  { id: 'assignments', icon: 'handshake', tone: 'blue', title: 'Assigned Assets by Employee',
+  // ---- Hardware ----
+  { id: 'inventory', group: 'Hardware', icon: 'devices', tone: 'indigo', title: 'Full Inventory Report',
+    desc: 'Every asset with status, holder, location, purchase date and identifiers.' },
+  { id: 'by-category', group: 'Hardware', icon: 'category', tone: 'blue', title: 'Assets by Category',
+    desc: 'Count of assets per category, split across each status.' },
+  { id: 'by-location', group: 'Hardware', icon: 'location_on', tone: 'emerald', title: 'Assets by Location',
+    desc: 'How many assets sit at each office / location.' },
+  { id: 'by-status', group: 'Hardware', icon: 'donut_small', tone: 'amber', title: 'Assets by Status',
+    desc: 'Fleet breakdown across In Stock / Assigned / In Repair / Scrap.' },
+  { id: 'in-stock', group: 'Hardware', icon: 'inventory', tone: 'emerald', title: 'Available (In Stock) Assets',
+    desc: 'Devices currently free and ready to assign.' },
+  { id: 'eol', group: 'Hardware', icon: 'update', tone: 'rose', title: 'End-of-Life / Replacement',
+    desc: 'Assets past or nearing their lifecycle end — plan replacements.' },
+  { id: 'aging', group: 'Hardware', icon: 'schedule', tone: 'blue', title: 'Asset Aging Report',
+    desc: 'Every asset ranked by age in months (oldest first).' },
+  { id: 'scrap', group: 'Hardware', icon: 'delete', tone: 'rose', title: 'Scrapped / Retired Assets',
+    desc: 'Devices marked as scrap / retired.' },
+  // ---- Assignments & People ----
+  { id: 'assignments', group: 'Assignments & People', icon: 'handshake', tone: 'blue', title: 'Assigned Assets by Employee',
     desc: 'Zimmet listesi — who currently holds which device, by department.' },
-  { id: 'maintenance', icon: 'build', tone: 'amber', title: 'Maintenance & Cost Report',
-    desc: 'All repair logs with service company, duration and total cost.' },
-  { id: 'licenses', icon: 'vpn_key', tone: 'indigo', title: 'License Utilization Report',
+  { id: 'employees', group: 'Assignments & People', icon: 'badge', tone: 'indigo', title: 'Employee Directory',
+    desc: 'All employees with department, title, status and assets held.' },
+  { id: 'no-assets', group: 'Assignments & People', icon: 'person_off', tone: 'amber', title: 'Employees Without Assets',
+    desc: 'Active employees who currently hold no device.' },
+  { id: 'handovers', group: 'Assignments & People', icon: 'assignment_turned_in', tone: 'emerald', title: 'Handover / Zimmet History',
+    desc: 'Every handover transaction with date, employee and items.' },
+  // ---- Software ----
+  { id: 'licenses', group: 'Software', icon: 'vpn_key', tone: 'indigo', title: 'License Utilization',
     desc: 'Seat usage, utilization % and upcoming expirations.' },
-  { id: 'software', icon: 'workspace_premium', tone: 'emerald', title: 'Software Assignments Report',
+  { id: 'expiring-licenses', group: 'Software', icon: 'event_busy', tone: 'rose', title: 'Expiring Licenses (90 days)',
+    desc: 'License pools expiring within the next 90 days.' },
+  { id: 'software', group: 'Software', icon: 'workspace_premium', tone: 'emerald', title: 'Software Assignments',
     desc: 'Which employee holds which software license, assigned when and by whom.' },
-  { id: 'consumables', icon: 'inventory_2', tone: 'rose', title: 'Consumables Stock Report',
+  // ---- Operations ----
+  { id: 'maintenance', group: 'Operations', icon: 'build', tone: 'amber', title: 'Maintenance & Cost',
+    desc: 'All repair logs with service company, duration and total cost.' },
+  { id: 'open-repairs', group: 'Operations', icon: 'pending_actions', tone: 'rose', title: 'Open Repairs',
+    desc: 'Devices currently in repair and how long they have been out.' },
+  // ---- Consumables ----
+  { id: 'consumables', group: 'Consumables', icon: 'inventory_2', tone: 'blue', title: 'Consumables Stock',
     desc: 'Stock levels vs minimum alert levels with low-stock flags.' },
+  { id: 'low-stock', group: 'Consumables', icon: 'production_quantity_limits', tone: 'rose', title: 'Low-Stock Consumables',
+    desc: 'Only items at or below their minimum level — the reorder list.' },
 ];
 
-async function buildReport(id) {
-  if (id === 'inventory') {
+const REPORT_MONTH_MS = 30.44 * 86400000;
+const asgName = (x) => (x.currentEmployee ? x.currentEmployee.fullName : '');
+
+/* Each builder returns { cols, rows, summary } — all from existing endpoints. */
+const REPORT_BUILDERS = {
+  inventory: async () => {
     const { items } = await api('/assets?limit=2000');
     return {
-      cols: ['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'MAC', 'Status', 'Assigned To', 'Purchase Date'],
+      cols: ['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'MAC', 'Status', 'Assigned To', 'Location', 'Purchase Date'],
       rows: items.map((x) => [x.assetTag, x.category, x.brand, x.model, x.serialNumber,
-        x.macEthernet || x.macWifi || '', x.status, x.currentEmployee ? x.currentEmployee.fullName : '',
+        x.macEthernet || x.macWifi || '', x.status, asgName(x), x.location || '',
         x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
-      summary: `${items.length} assets • ${items.filter((x) => x.status === 'Assigned').length} assigned • ` +
-        `${items.filter((x) => x.status === 'In Stock').length} in stock • ` +
-        `${items.filter((x) => x.status === 'In Repair').length} in repair • ` +
-        `${items.filter((x) => x.status === 'Scrap').length} scrapped`,
+      summary: `${items.length} assets • ${items.filter((x) => x.status === 'Assigned').length} assigned • `
+        + `${items.filter((x) => x.status === 'In Stock').length} in stock • `
+        + `${items.filter((x) => x.status === 'In Repair').length} in repair • `
+        + `${items.filter((x) => x.status === 'Scrap').length} scrapped`,
     };
-  }
-  if (id === 'assignments') {
+  },
+
+  'by-category': async () => {
+    const { items } = await api('/assets?limit=2000');
+    const map = {};
+    items.forEach((x) => {
+      const c = map[x.category] || (map[x.category] = { total: 0, 'In Stock': 0, Assigned: 0, 'In Repair': 0, Scrap: 0 });
+      c.total++; if (c[x.status] != null) c[x.status]++;
+    });
+    const rows = Object.entries(map).sort((a, b) => b[1].total - a[1].total)
+      .map(([cat, c]) => [cat, c.total, c['In Stock'], c.Assigned, c['In Repair'], c.Scrap]);
+    return { cols: ['Category', 'Total', 'In Stock', 'Assigned', 'In Repair', 'Scrap'], rows,
+      summary: `${items.length} assets across ${rows.length} categories` };
+  },
+
+  'by-location': async () => {
+    const { items } = await api('/assets?limit=2000');
+    const map = {};
+    items.forEach((x) => {
+      const k = x.location || '— Unassigned —';
+      const c = map[k] || (map[k] = { total: 0, assigned: 0, stock: 0 });
+      c.total++; if (x.status === 'Assigned') c.assigned++; if (x.status === 'In Stock') c.stock++;
+    });
+    const rows = Object.entries(map).sort((a, b) => b[1].total - a[1].total)
+      .map(([loc, c]) => [loc, c.total, c.assigned, c.stock]);
+    return { cols: ['Location', 'Total Assets', 'Assigned', 'In Stock'], rows,
+      summary: `${items.length} assets across ${rows.length} locations` };
+  },
+
+  'by-status': async () => {
+    const { items } = await api('/assets?limit=2000');
+    const total = items.length || 1;
+    const rows = ['In Stock', 'Assigned', 'In Repair', 'Scrap'].map((s) => {
+      const n = items.filter((x) => x.status === s).length;
+      return [s, n, Math.round((n / total) * 100) + '%'];
+    });
+    return { cols: ['Status', 'Count', '% of Fleet'], rows, summary: `${items.length} assets total` };
+  },
+
+  'in-stock': async () => {
+    const { items } = await api('/assets?status=In Stock&limit=2000');
+    return { cols: ['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'Location', 'Purchase Date'],
+      rows: items.map((x) => [x.assetTag, x.category, x.brand, x.model, x.serialNumber, x.location || '',
+        x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
+      summary: `${items.length} assets available to assign` };
+  },
+
+  eol: async () => {
+    const { items } = await api('/assets?limit=2000');
+    const rows = items
+      .filter((x) => x.status !== 'Scrap' && x.purchaseDate)
+      .map((x) => ({ x, l: lifecycleInfo(x) }))
+      .filter((o) => o.l.eol && o.l.pct >= 90)
+      .sort((a, b) => b.l.pct - a.l.pct)
+      .map(({ x, l }) => [x.assetTag, x.category, `${x.brand} ${x.model}`, asgName(x),
+        fmtDate(x.purchaseDate), fmtDate(l.eol), Math.min(l.pct, 100) + '%', l.overdue ? 'REPLACE NOW' : 'Due soon']);
+    const overdue = rows.filter((r) => r[7] === 'REPLACE NOW').length;
+    return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Assigned To', 'Purchase Date', 'EOL Date', 'Elapsed', 'State'], rows,
+      summary: `${rows.length} assets at/near end-of-life • ${overdue} overdue for replacement` };
+  },
+
+  aging: async () => {
+    const { items } = await api('/assets?limit=2000');
+    const rows = items.filter((x) => x.purchaseDate)
+      .map((x) => ({ x, age: Math.floor((Date.now() - new Date(x.purchaseDate).getTime()) / REPORT_MONTH_MS) }))
+      .sort((a, b) => b.age - a.age)
+      .map(({ x, age }) => [x.assetTag, x.category, `${x.brand} ${x.model}`, fmtDate(x.purchaseDate), age, x.status, asgName(x)]);
+    return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Age (months)', 'Status', 'Assigned To'], rows,
+      summary: `${rows.length} assets with a purchase date` };
+  },
+
+  scrap: async () => {
+    const { items } = await api('/assets?status=Scrap&limit=2000');
+    return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Serial No', 'Location', 'Purchase Date'],
+      rows: items.map((x) => [x.assetTag, x.category, `${x.brand} ${x.model}`, x.serialNumber, x.location || '',
+        x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
+      summary: `${items.length} scrapped / retired assets` };
+  },
+
+  assignments: async () => {
     const [{ items }, employees] = await Promise.all([
       api('/assets?status=Assigned&limit=2000'),
-      api('/employees?limit=1000'),
+      api('/employees?limit=10000'),
     ]);
     const dept = new Map(employees.map((p) => [p.id, p]));
     const rows = items
       .map((x) => {
         const p = x.currentEmployee ? dept.get(x.currentEmployee.id) : null;
-        return [x.currentEmployee ? x.currentEmployee.fullName : '', p ? p.department || '' : '',
-          x.assetTag, `${x.brand} ${x.model}`, x.category, x.serialNumber];
+        return [asgName(x), p ? p.department || '' : '', x.assetTag, `${x.brand} ${x.model}`, x.category, x.serialNumber];
       })
       .sort((a2, b2) => a2[0].localeCompare(b2[0]));
-    return {
-      cols: ['Employee', 'Department', 'Asset Tag', 'Brand / Model', 'Category', 'Serial No'],
-      rows,
-      summary: `${items.length} assigned assets across ${new Set(rows.map((r) => r[0])).size} employees`,
-    };
-  }
-  if (id === 'maintenance') {
+    return { cols: ['Employee', 'Department', 'Asset Tag', 'Brand / Model', 'Category', 'Serial No'], rows,
+      summary: `${items.length} assigned assets across ${new Set(rows.map((r) => r[0])).size} employees` };
+  },
+
+  employees: async () => {
+    const emps = await api('/employees?limit=10000');
+    return { cols: ['Employee', 'Email', 'Department', 'Title', 'Status', 'Assets Held'],
+      rows: emps.map((p) => [p.fullName, p.email, p.department || '', p.title || '', p.status, p.activeAssetCount]),
+      summary: `${emps.length} employees • ${emps.filter((p) => p.status === 'Active').length} active` };
+  },
+
+  'no-assets': async () => {
+    const emps = await api('/employees?limit=10000');
+    const none = emps.filter((p) => p.status === 'Active' && !p.activeAssetCount);
+    return { cols: ['Employee', 'Email', 'Department', 'Title'],
+      rows: none.map((p) => [p.fullName, p.email, p.department || '', p.title || '']),
+      summary: `${none.length} active employees hold no assets` };
+  },
+
+  handovers: async () => {
+    const hs = await api('/handovers?limit=200');
+    const rows = hs.slice().sort((a, b) => new Date(b.transactionDate) - new Date(a.transactionDate))
+      .map((h) => [fmtDateTime(h.transactionDate), h.employeeName, (h.items || []).length,
+        (h.items || []).map((i) => i.assetTag).join(', '), h.documentType]);
+    return { cols: ['Date', 'Employee', '# Items', 'Asset Tags', 'Type'], rows,
+      summary: `${hs.length} handover transactions` };
+  },
+
+  licenses: async () => {
+    const lics = await api('/licenses');
+    return { cols: ['Software', 'Vendor', 'Used Seats', 'Total Seats', 'Utilization %', 'Expires'],
+      rows: lics.map((l) => [l.softwareName, l.vendor || '', l.usedSeats, l.totalSeats,
+        Math.round((l.usedSeats / l.totalSeats) * 100), fmtDate(l.expirationDate)]),
+      summary: `${lics.length} license pools • ${lics.reduce((s2, l) => s2 + l.usedSeats, 0)}/`
+        + `${lics.reduce((s2, l) => s2 + l.totalSeats, 0)} seats in use` };
+  },
+
+  'expiring-licenses': async () => {
+    const lics = await api('/licenses');
+    const now = Date.now();
+    const rows = lics.map((l) => ({ l, days: Math.ceil((new Date(l.expirationDate).getTime() - now) / 86400000) }))
+      .filter((o) => o.days >= 0 && o.days <= 90)
+      .sort((a, b) => a.days - b.days)
+      .map(({ l, days }) => [l.softwareName, l.vendor || '', fmtDate(l.expirationDate), days, `${l.usedSeats}/${l.totalSeats}`]);
+    return { cols: ['Software', 'Vendor', 'Expires', 'Days Left', 'Seats (used/total)'], rows,
+      summary: `${rows.length} licenses expiring within 90 days` };
+  },
+
+  software: async () => {
+    const rows = await api('/licenses/assignments');
+    return { cols: ['Employee', 'Software', 'Assigned At', 'Assigned By'],
+      rows: rows.map((a2) => [a2.employeeName, a2.softwareName, fmtDate(a2.assignedAt), a2.assignedByName || '']),
+      summary: `${rows.length} active software assignments` };
+  },
+
+  maintenance: async () => {
     const logs = await api('/maintenance?limit=2000');
     const totalCost = logs.reduce((sum, m) => sum + (Number(m.cost) || 0), 0);
-    return {
-      cols: ['Asset Tag', 'Service Company', 'Issue', 'Sent', 'Returned', 'Days', 'Cost', 'Status', 'Notes'],
+    return { cols: ['Asset Tag', 'Service Company', 'Issue', 'Sent', 'Returned', 'Days', 'Cost', 'Status', 'Notes'],
       rows: logs.map((m) => {
         const sent = new Date(m.sentDate);
         const back = m.returnDate ? new Date(m.returnDate) : new Date();
@@ -2355,39 +2618,44 @@ async function buildReport(id) {
           m.returnDate ? fmtDate(m.returnDate) : '', Math.max(0, Math.round((back - sent) / 86400000)),
           Number(m.cost || 0).toFixed(2), m.returnDate ? 'Closed' : 'Open', (m.progressNotes || []).length];
       }),
-      summary: `${logs.length} repair logs • ${logs.filter((m) => !m.returnDate).length} open • ` +
-        `total cost ${totalCost.toFixed(2)}`,
-    };
-  }
-  if (id === 'licenses') {
-    const lics = await api('/licenses');
-    return {
-      cols: ['Software', 'Vendor', 'Used Seats', 'Total Seats', 'Utilization %', 'Expires'],
-      rows: lics.map((l) => [l.softwareName, l.vendor || '', l.usedSeats, l.totalSeats,
-        Math.round((l.usedSeats / l.totalSeats) * 100), fmtDate(l.expirationDate)]),
-      summary: `${lics.length} license pools • ${lics.reduce((s2, l) => s2 + l.usedSeats, 0)}/` +
-        `${lics.reduce((s2, l) => s2 + l.totalSeats, 0)} seats in use`,
-    };
-  }
-  if (id === 'software') {
-    const rows = await api('/licenses/assignments');
-    return {
-      cols: ['Employee', 'Software', 'Assigned At', 'Assigned By'],
-      rows: rows.map((a2) => [a2.employeeName, a2.softwareName, fmtDate(a2.assignedAt), a2.assignedByName || '']),
-      summary: `${rows.length} active software assignments`,
-    };
-  }
-  // consumables
-  const cons = await api('/consumables');
-  return {
-    cols: ['Item', 'Stock', 'Min. Level', 'Status'],
-    rows: cons.map((c) => [c.itemName, c.totalStock, c.minimumStockAlertLevel, c.lowStock ? 'LOW STOCK' : 'OK']),
-    summary: `${cons.length} items • ${cons.filter((c) => c.lowStock).length} below minimum`,
-  };
+      summary: `${logs.length} repair logs • ${logs.filter((m) => !m.returnDate).length} open • `
+        + `total cost ${totalCost.toFixed(2)}` };
+  },
+
+  'open-repairs': async () => {
+    const logs = await api('/maintenance?limit=2000');
+    const open = logs.filter((m) => !m.returnDate);
+    const rows = open.map((m) => [m.assetTag, m.serviceCompany, m.issueDescription, fmtDate(m.sentDate),
+      Math.max(0, Math.round((Date.now() - new Date(m.sentDate).getTime()) / 86400000)), Number(m.cost || 0).toFixed(2)])
+      .sort((a, b) => b[4] - a[4]);
+    return { cols: ['Asset Tag', 'Service Company', 'Issue', 'Sent', 'Days Open', 'Est. Cost'], rows,
+      summary: `${open.length} assets currently in repair` };
+  },
+
+  consumables: async () => {
+    const cons = await api('/consumables');
+    return { cols: ['Item', 'Stock', 'Min. Level', 'Status'],
+      rows: cons.map((c) => [c.itemName, c.totalStock, c.minimumStockAlertLevel, c.lowStock ? 'LOW STOCK' : 'OK']),
+      summary: `${cons.length} items • ${cons.filter((c) => c.lowStock).length} below minimum` };
+  },
+
+  'low-stock': async () => {
+    const cons = await api('/consumables');
+    const low = cons.filter((c) => c.lowStock);
+    return { cols: ['Item', 'Stock', 'Min. Level', 'Shortfall'],
+      rows: low.map((c) => [c.itemName, c.totalStock, c.minimumStockAlertLevel, Math.max(0, c.minimumStockAlertLevel - c.totalStock)]),
+      summary: `${low.length} of ${cons.length} items at/below minimum` };
+  },
+};
+
+async function buildReport(id) {
+  const fn = REPORT_BUILDERS[id];
+  if (!fn) throw new Error(`Unknown report: ${id}`);
+  return fn();
 }
 
 /* ---- Custom report builder: any source × any columns × filters ---- */
-const CRB_CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Peripheral', 'Other'];
+const CRB_CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
 const CUSTOM_SOURCES = {
   assets: {
     label: 'Hardware Assets',
@@ -2439,7 +2707,7 @@ const CUSTOM_SOURCES = {
   },
   employees: {
     label: 'Employees',
-    fetch: async () => api('/employees?limit=1000'),
+    fetch: async () => api('/employees?limit=10000'),
     columns: [
       ['fullName', 'Employee', (x) => x.fullName],
       ['email', 'Email', (x) => x.email],
@@ -2703,18 +2971,20 @@ Views.reports = async function (el) {
       </div>
     </div>
 
-    <div class="gs-section" style="margin-bottom:8px">Preset Reports</div>
-    <div class="grid grid-2" id="report-cards">
-      ${REPORT_DEFS.map((r) => `
-      <div class="card card-pad gs-item" data-report="${r.id}" style="align-items:flex-start">
-        ${iconChip(r.icon, r.tone)}
-        <div style="flex:1">
-          <div class="cell-title" style="font-size:15px">${esc(r.title)}</div>
-          <div class="cell-sub">${esc(r.desc)}</div>
-        </div>
-        <span class="ms" style="color:var(--outline)">chevron_right</span>
+    <div class="gs-section" style="margin-bottom:8px">Preset Reports <span class="ob-hint">(${REPORT_DEFS.length} ready-made — click to preview, then export CSV or print)</span></div>
+    ${[...new Set(REPORT_DEFS.map((r) => r.group))].map((group) => `
+      <div class="rep-group-label">${esc(group)}</div>
+      <div class="grid grid-2" style="margin-bottom:14px">
+        ${REPORT_DEFS.filter((r) => r.group === group).map((r) => `
+        <div class="card card-pad gs-item" data-report="${r.id}" style="align-items:flex-start;cursor:pointer">
+          ${iconChip(r.icon, r.tone)}
+          <div style="flex:1">
+            <div class="cell-title" style="font-size:15px">${esc(r.title)}</div>
+            <div class="cell-sub">${esc(r.desc)}</div>
+          </div>
+          <span class="ms" style="color:var(--outline)">chevron_right</span>
+        </div>`).join('')}
       </div>`).join('')}
-    </div>
     <div id="report-result" style="margin-top:20px"></div>`;
 
   /* ---- analytics renderer (re-runs on range / page change only) ---- */

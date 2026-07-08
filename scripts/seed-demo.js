@@ -72,22 +72,35 @@ const CONSUMABLES = [
 
 async function main() {
   const force = process.argv.includes('--force');
+  const reset = process.argv.includes('--reset');
+  // Company size (default 500). Everything else scales proportionally.
+  //   SEED_EMPLOYEES=2000 npm run seed:demo -- --reset
+  const EMP_COUNT = Math.max(1, Number(process.env.SEED_EMPLOYEES) || 500);
+  const factor = EMP_COUNT / 500;
+  const scale = (base) => Math.max(1, Math.round(base * factor));
   await ensureDatabase();
 
+  if (reset) {
+    console.log('[seed] resetting domain tables (users & settings kept)…');
+    await query(`TRUNCATE license_assignments, licenses, handover_documents, handovers,
+      maintenance_logs, asset_history, assets, consumables, catalog_models, employees
+      RESTART IDENTITY CASCADE`);
+  }
+
   const { rows: [{ n }] } = await query('SELECT COUNT(*)::int AS n FROM employees');
-  if (n > 20 && !force) {
-    console.error(`DB already has ${n} employees. Re-run with --force to seed anyway.`);
+  if (n > 20 && !force && !reset) {
+    console.error(`DB already has ${n} employees. Re-run with --reset (fresh) or --force (add on top).`);
     process.exit(1);
   }
 
-  const { rows: admins } = await query(`SELECT id, username FROM users WHERE role = 'Admin' LIMIT 1`);
+  const { rows: admins } = await query(`SELECT id, username FROM users WHERE role IN ('Owner','Admin') ORDER BY created_at LIMIT 1`);
   const admin = admins[0] || { id: 'system', username: 'System' };
   const by = [admin.id, admin.username];
 
-  console.log('[seed] employees…');
+  console.log(`[seed] employees… (target ${EMP_COUNT}, scale ×${factor})`);
   const employees = [];
   const usedEmails = new Set();
-  for (let i = 0; i < 500; i++) {
+  for (let i = 0; i < EMP_COUNT; i++) {
     const f = pick(FIRST), l = pick(LAST);
     let email = `${f}.${l}`.toLowerCase().replace(/ı/g,'i').replace(/ş/g,'s').replace(/ç/g,'c')
       .replace(/ö/g,'o').replace(/ü/g,'u').replace(/ğ/g,'g') + '@firma.com.tr';
@@ -109,7 +122,10 @@ async function main() {
   console.log('[seed] assets…');
   const assets = [];
   let tagNo = 2000;
-  const counts = { Laptop: 340, Desktop: 90, Monitor: 160, Phone: 80, Printer: 25, Network: 30, Peripheral: 45 };
+  const counts = {
+    Laptop: scale(340), Desktop: scale(90), Monitor: scale(160), Phone: scale(80),
+    Printer: scale(25), Network: scale(30), Peripheral: scale(45),
+  };
   for (const [cat, cnt] of Object.entries(counts)) {
     const def = HW[cat];
     for (let i = 0; i < cnt; i++) {
@@ -119,16 +135,19 @@ async function main() {
         sn: serial(def.sn), macE: def.mac && chance(0.7) ? mac() : null, macW: def.mac && chance(0.8) ? mac() : null,
         specs: def.specs ? { cpu: pick(CPUS), ram: pick(RAMS), storage: pick(DISKS), os: pick(OSES) } : {},
         warranty: chance(0.8) ? daysAhead(rnd(1100) - 200) : null,
+        // Purchase spread over ~4.7 years so lifecycle/EOL & aging reports are populated
+        // (a slice will be past the default 48-month lifecycle → "replace now").
+        bought: daysAgo(rnd(1700) + 30),
       });
     }
   }
   for (const a of assets) {
     const { rows } = await query(
       `INSERT INTO assets (asset_tag, serial_number, brand, model, category, mac_ethernet, mac_wifi,
-                           specs, status, warranty_end_date, qr_code_string, created_at, location)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'In Stock',$9,$10,$11,$12) RETURNING id`,
+                           specs, status, warranty_end_date, qr_code_string, created_at, location, purchase_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'In Stock',$9,$10,$11,$12,$13) RETURNING id`,
       [a.tag, a.sn, a.brand, a.model, a.cat, a.macE, a.macW, JSON.stringify(a.specs),
-       a.warranty, `ITACPRO|ASSET|${a.tag}`, daysAgo(rnd(900) + 30), pick(DEFAULT_LOCATIONS)]
+       a.warranty, `ITACPRO|ASSET|${a.tag}`, a.bought, pick(DEFAULT_LOCATIONS), a.bought]
     );
     a.id = rows[0].id;
   }
@@ -185,7 +204,9 @@ async function main() {
   console.log('[seed] maintenance…');
   const SERVICE = ['TeknoServis A.Ş.','Arena Bilgisayar Servis','Notebook Klinik','Vestel Yetkili Servis'];
   const ISSUES = ['Ekran arızası','Batarya şişmesi','Klavye tuş arızası','Anakart sorunu','Fan gürültüsü','Şarj soketi arızası','Yazılım kaynaklı açılmama'];
-  const inRepair = shuffled.slice(assignTotal, assignTotal + 35);
+  const nOpenRepair = scale(35);
+  const nClosedRepair = scale(60);
+  const inRepair = shuffled.slice(assignTotal, assignTotal + nOpenRepair);
   for (const a of inRepair) {
     const when = daysAgo(rnd(20));
     await query(
@@ -200,7 +221,7 @@ async function main() {
       [a.id, a.tag, pick(ISSUES), ...by, when]
     );
   }
-  for (const a of shuffled.slice(assignTotal + 35, assignTotal + 95)) {
+  for (const a of shuffled.slice(assignTotal + nOpenRepair, assignTotal + nOpenRepair + nClosedRepair)) {
     const sent = daysAgo(rnd(400) + 30);
     await query(
       `INSERT INTO maintenance_logs (asset_id, asset_tag, service_company, issue_description, cost, sent_date, return_date, previous_status, resolution_note)
@@ -210,7 +231,8 @@ async function main() {
   }
 
   // Scrap ~8% of remaining stock.
-  for (const a of shuffled.slice(assignTotal + 95, assignTotal + 95 + Math.floor(assets.length * 0.08))) {
+  const scrapStart = assignTotal + nOpenRepair + nClosedRepair;
+  for (const a of shuffled.slice(scrapStart, scrapStart + Math.floor(assets.length * 0.08))) {
     await query(`UPDATE assets SET status='Scrap' WHERE id=$1`, [a.id]);
   }
 

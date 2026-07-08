@@ -444,6 +444,11 @@ function showSettings() {
             <span class="ob-hint">Separate paragraphs with a blank line; the 2nd paragraph renders italic (TR translation).</span></label>
           <textarea id="set-terms" rows="6">${esc(AppConfig.handoverTerms || '')}</textarea>
         </div>
+        <div class="form-field full">
+          <button type="button" class="btn btn-outline" id="set-customize-tpl">
+            <span class="ms">tune</span> Customize Zimmet Template…</button>
+          <span class="ob-hint" style="margin-left:8px">Choose which sections, columns &amp; labels appear on the printed handover form, with a live preview.</span>
+        </div>
       </div>
 
       <div class="gs-section" style="margin:18px 0 6px">Handover Document Storage</div>
@@ -475,6 +480,7 @@ function showSettings() {
         };
         r.readAsDataURL(file);
       });
+      $('#set-customize-tpl', overlay).addEventListener('click', () => showTemplateCustomizer());
       $('#set-storage', overlay).addEventListener('change', (e) => {
         const v = e.target.value;
         $('#set-storage-extra', overlay).innerHTML = v === 'local' ? ''
@@ -503,6 +509,90 @@ function showSettings() {
           AppConfig.documentStorage = saved.documentStorage;
           applyBranding();
           toast('Settings saved', 'success');
+          closeModal();
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    },
+  });
+}
+
+/* ---- Zimmet Tutanağı template customizer (popup with live preview) ---- */
+function showTemplateCustomizer() {
+  if (!Auth.can('canManageBranding')) {
+    toast('Only the Owner can customize the handover template', 'error');
+    return;
+  }
+  // Work on a copy; only saved on "Save template".
+  const tpl = { ...(AppConfig.handoverTemplate || {}) };
+
+  const TOGGLES = [
+    ['Header', [['showLogo', 'Company logo']]],
+    ['Employee fields', [['showEmployeeId', 'Employee ID / Sicil No'], ['showDepartment', 'Department'], ['showTitle', 'Position / Title']]],
+    ['Equipment columns', [['colCategory', 'Category'], ['colSerial', 'Serial number'], ['colMac', 'MAC address'], ['colCondition', 'Condition']]],
+    ['Sections', [['showTerms', 'Terms & Conditions'], ['showReturnSection', 'Equipment return section']]],
+  ];
+  const TEXTS = [
+    ['titleEn', 'Title (English)', 60], ['titleTr', 'Title (Turkish)', 60], ['subtitle', 'Header subtitle', 100],
+    ['deliveredByLabel', 'Delivered-by label', 80], ['receivedByLabel', 'Received-by label', 80], ['footerNote', 'Footer note (optional)', 200],
+  ];
+
+  // Sample data so the preview always has something to show.
+  const sampleTerms = String(AppConfig.handoverTerms || '')
+    .split(/\n\s*\n/).filter((p) => p.trim())
+    .map((p, i) => (i === 0 ? `<p style="margin:0 0 6pt">${esc(p.trim())}</p>` : `<em>${esc(p.trim())}</em>`)).join('');
+  const sample = {
+    companyName: AppConfig.companyName, companyLogo: AppConfig.companyLogo,
+    formNo: 'HF-ÖRNEK01', formSuffix: '', dateStr: new Date().toLocaleDateString('tr-TR'),
+    employeeName: 'Ahmet Yılmaz', employeeId: 'EMP12345', department: 'Bilgi İşlem', title: 'Sistem Uzmanı',
+    deliveredByName: (Auth.profile && Auth.profile.username) || 'IT Department', termsHtml: sampleTerms,
+    items: [
+      { brand: 'Dell', model: 'Latitude 5540', category: 'Laptop', serialNumber: 'SN-10231', macAddress: 'AA:BB:CC:11:22', conditionNote: 'New' },
+      { brand: 'LG', model: '27UP850', category: 'Monitor', serialNumber: 'MN-88120', macAddress: 'N/A', conditionNote: 'New' },
+    ],
+  };
+
+  const toggleHtml = (key, label) =>
+    `<label class="tc-opt"><input type="checkbox" data-tpl="${key}" ${tpl[key] ? 'checked' : ''}> ${esc(label)}</label>`;
+  const textHtml = (key, label, max) =>
+    `<div class="form-field" style="margin-bottom:8px"><label>${esc(label)}</label>
+       <input data-tpl="${key}" maxlength="${max}" value="${esc(tpl[key] == null ? '' : tpl[key])}"></div>`;
+
+  openModal({
+    title: 'Customize Zimmet Tutanağı Template',
+    wide: true,
+    body: `
+      <div class="tc-grid">
+        <div class="tc-options">
+          ${TOGGLES.map(([grp, items]) => `
+            <div class="gs-section" style="margin:6px 0 6px">${esc(grp)}</div>
+            ${items.map(([k, l]) => toggleHtml(k, l)).join('')}`).join('')}
+          <div class="gs-section" style="margin:14px 0 6px">Titles & labels</div>
+          ${TEXTS.map(([k, l, m]) => textHtml(k, l, m)).join('')}
+        </div>
+        <div class="tc-preview-wrap">
+          <div class="gs-section" style="margin:6px 0 8px">Live preview</div>
+          <div class="tc-preview-scroll"><div id="tc-preview"></div></div>
+        </div>
+      </div>`,
+    foot: `<button class="btn btn-outline" data-close>Cancel</button>
+           <button class="btn btn-primary" id="tc-save"><span class="ms">save</span> Save template</button>`,
+    onMount(overlay) {
+      const renderPreview = () => {
+        $('#tc-preview', overlay).innerHTML = `<div class="preview-paper">${handoverReceiptHTML(sample, tpl)}</div>`;
+      };
+      renderPreview();
+      overlay.querySelectorAll('[data-tpl]').forEach((inp) => {
+        const evt = inp.type === 'checkbox' ? 'change' : 'input';
+        inp.addEventListener(evt, () => {
+          tpl[inp.dataset.tpl] = inp.type === 'checkbox' ? inp.checked : inp.value;
+          renderPreview();
+        });
+      });
+      $('#tc-save', overlay).addEventListener('click', async () => {
+        try {
+          const saved = await api('/settings', { method: 'PUT', body: { handoverTemplate: tpl } });
+          AppConfig.handoverTemplate = saved.handoverTemplate;
+          toast('Zimmet template saved', 'success');
           closeModal();
         } catch (err) { toast(err.message, 'error'); }
       });

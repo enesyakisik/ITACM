@@ -13,8 +13,9 @@ router.use(authenticate);
  */
 router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   const receipt = await handoverService.executeHandover(req.body, req.user);
-  // Auto-archive the generated PDF against the employee (best-effort).
-  require('../utils/handoverArchive').archiveReceipt(receipt.handoverId, req.user);
+  // The generated PDF is NOT auto-archived — it can always be regenerated on
+  // demand (GET /:id/pdf). Only signed scans the user uploads are stored, so the
+  // archive doesn't fill up with copies nobody signed.
   res.status(201).json({ success: true, data: receipt });
 }));
 

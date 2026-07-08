@@ -1,12 +1,12 @@
 /** App settings (postgres): company branding, handover terms, onboarding flag. */
 const { query } = require('./pool');
 const { HttpError } = require('../../utils/httpError');
-const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS } = require('../../utils/defaults');
+const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS, DEFAULT_HANDOVER_TEMPLATE } = require('../../utils/defaults');
 
 
 async function getSettings() {
   const { rows } = await query(
-    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options, document_storage FROM app_settings WHERE id = 1'
+    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options, document_storage, handover_template FROM app_settings WHERE id = 1'
   );
   const s = rows[0] || {};
   return {
@@ -19,7 +19,30 @@ async function getSettings() {
     defaultLocation: s.default_location || null,
     specOptions: { ...DEFAULT_SPEC_OPTIONS, ...(s.spec_options || {}) },
     documentStorage: s.document_storage || { provider: 'local' },
+    // Merge the saved template over defaults so newly added options appear automatically.
+    handoverTemplate: { ...DEFAULT_HANDOVER_TEMPLATE, ...(s.handover_template || {}) },
   };
+}
+
+// Only known keys are stored; booleans coerced, text fields length-capped.
+function sanitizeTemplate(tpl) {
+  if (tpl == null) return null;
+  if (typeof tpl !== 'object' || Array.isArray(tpl)) {
+    throw HttpError.badRequest('handoverTemplate must be an object');
+  }
+  const out = {};
+  const boolKeys = ['showLogo', 'showEmployeeId', 'showDepartment', 'showTitle',
+    'colCategory', 'colSerial', 'colMac', 'colCondition', 'showTerms', 'showReturnSection'];
+  const textKeys = { titleEn: 60, titleTr: 60, subtitle: 100, deliveredByLabel: 80, receivedByLabel: 80, footerNote: 200 };
+  for (const k of boolKeys) if (k in tpl) out[k] = !!tpl[k];
+  for (const [k, max] of Object.entries(textKeys)) {
+    if (k in tpl) {
+      const v = tpl[k] == null ? '' : String(tpl[k]);
+      if (v.length > max) throw HttpError.badRequest(`${k} too long (max ${max} chars)`);
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 function validateLogo(logo) {
@@ -52,7 +75,7 @@ function validateSpecOptions(so) {
   }
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage, handoverTemplate }) {
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -62,6 +85,7 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
   validateLogo(companyLogo);
   validateLifecycles(lifecycles);
   validateSpecOptions(specOptions);
+  const cleanTemplate = handoverTemplate !== undefined ? sanitizeTemplate(handoverTemplate) : null;
 
   await query(
     `UPDATE app_settings SET
@@ -73,14 +97,16 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
        locations      = CASE WHEN $6::jsonb IS NOT NULL THEN $6 ELSE locations END,
        default_location = CASE WHEN $7::text IS NOT NULL THEN NULLIF($7, '__none__') ELSE default_location END,
        spec_options   = CASE WHEN $8::jsonb IS NOT NULL THEN $8 ELSE spec_options END,
-       document_storage = CASE WHEN $9::jsonb IS NOT NULL THEN $9 ELSE document_storage END
+       document_storage = CASE WHEN $9::jsonb IS NOT NULL THEN $9 ELSE document_storage END,
+       handover_template = CASE WHEN $10::jsonb IS NOT NULL THEN $10 ELSE handover_template END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecycles ? JSON.stringify(lifecycles) : null,
      locations ? JSON.stringify(locations.map((l) => String(l).trim()).filter(Boolean)) : null,
      defaultLocation === null ? '__none__' : (defaultLocation ?? null),
      specOptions ? JSON.stringify(specOptions) : null,
-     documentStorage ? JSON.stringify(documentStorage) : null]
+     documentStorage ? JSON.stringify(documentStorage) : null,
+     cleanTemplate ? JSON.stringify(cleanTemplate) : null]
   );
   return getSettings();
 }

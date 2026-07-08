@@ -8,7 +8,7 @@ const LICENSE_EXPIRY_WINDOW_DAYS = 30;
 async function getEolAssets() {
   const [lcRes, assetsRes] = await Promise.all([
     query('SELECT lifecycles FROM app_settings WHERE id = 1'),
-    query(`SELECT id, asset_tag, brand, model, category, location, current_employee_id, current_employee_name, purchase_date 
+    query(`SELECT id, asset_tag, brand, model, category, location, current_employee_id, current_employee_name, purchase_date, lifecycle_months
            FROM assets WHERE status IN ('In Stock', 'Assigned', 'In Repair')`)
   ]);
 
@@ -27,7 +27,8 @@ async function getEolAssets() {
     const purchaseMs = new Date(pd).getTime();
     if (!purchaseMs) return;
 
-    const months = lc[row.category] || lc.Other || 48;
+    // Per-asset override wins over the category default.
+    const months = row.lifecycle_months || lc[row.category] || lc.Other || 48;
     const eolMs = purchaseMs + months * 30.4375 * 24 * 3600 * 1000;
     const pct = ((now - purchaseMs) / (eolMs - purchaseMs)) * 100;
 

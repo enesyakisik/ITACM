@@ -5,7 +5,7 @@ const { HttpError } = require('../../utils/httpError');
 
 const STATUSES = ['Active', 'Inactive'];
 
-async function listEmployees({ status, search, limit = 200 } = {}) {
+async function listEmployees({ status, search, limit = 200, offset = 0 } = {}) {
   const where = [];
   const params = [];
   if (status) {
@@ -20,14 +20,25 @@ async function listEmployees({ status, search, limit = 200 } = {}) {
       `OR department ILIKE $${params.length} OR title ILIKE $${params.length})`
     );
   }
-  params.push(Math.min(Number(limit) || 200, 1000));
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  // Cap raised to 10000 so the full directory (and reports) load for large
+  // companies; offset supports paging when needed.
+  params.push(Math.min(Number(limit) || 200, 10000));
+  params.push(Math.max(0, Number(offset) || 0));
 
   const { rows } = await query(
-    `SELECT * FROM employees ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-     ORDER BY full_name LIMIT $${params.length}`,
+    `SELECT * FROM employees ${whereSql}
+     ORDER BY full_name LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
   return mapRows(rows);
+}
+
+async function getEmployee(id) {
+  if (!isUuid(id)) throw HttpError.notFound(`Employee ${id} not found`);
+  const { rows } = await query('SELECT * FROM employees WHERE id = $1', [id]);
+  if (!rows[0]) throw HttpError.notFound(`Employee ${id} not found`);
+  return mapRow(rows[0]);
 }
 
 async function createEmployee({ fullName, email, department, title, status = 'Active' }) {
@@ -91,4 +102,4 @@ async function getEmployeeHistory(id, limit = 100) {
   return mapRows(rows);
 }
 
-module.exports = { listEmployees, createEmployee, updateEmployee, getEmployeeHistory };
+module.exports = { listEmployees, getEmployee, createEmployee, updateEmployee, getEmployeeHistory };

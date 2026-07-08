@@ -40,6 +40,13 @@ function sanitize(body, { partial = false } = {}) {
   if (body.purchaseDate !== undefined) {
     data.purchase_date = body.purchaseDate ? new Date(body.purchaseDate) : null;
   }
+  if (body.lifecycleMonths !== undefined) {
+    const m = body.lifecycleMonths === '' || body.lifecycleMonths == null ? null : Number(body.lifecycleMonths);
+    if (m !== null && (!Number.isInteger(m) || m < 1 || m > 240)) {
+      throw HttpError.badRequest('lifecycleMonths must be an integer between 1 and 240');
+    }
+    data.lifecycle_months = m;
+  }
   if (specs !== undefined) {
     data.specs = JSON.stringify({
       cpu: specs?.cpu || null,
@@ -71,14 +78,14 @@ async function createAsset(body) {
     try {
       const { rows } = await query(
         `INSERT INTO assets (asset_tag, serial_number, brand, model, category,
-                             mac_ethernet, mac_wifi, specs, status, warranty_end_date, purchase_date, qr_code_string, location)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'{}'::jsonb),COALESCE($9,'In Stock'),$10,$11,$12,$13)
+                             mac_ethernet, mac_wifi, specs, status, warranty_end_date, purchase_date, qr_code_string, location, lifecycle_months)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'{}'::jsonb),COALESCE($9,'In Stock'),$10,$11,$12,$13,$14)
          RETURNING id, asset_tag`,
         [
           data.asset_tag, data.serial_number, data.brand, data.model, data.category,
           data.mac_ethernet || null, data.mac_wifi || null, data.specs || null,
           data.status || null, data.warranty_end_date || null, data.purchase_date || null,
-          buildQrCodeString(data.asset_tag), data.location || null,
+          buildQrCodeString(data.asset_tag), data.location || null, data.lifecycle_months ?? null,
         ]
       );
       return { id: rows[0].id, assetTag: rows[0].asset_tag };
