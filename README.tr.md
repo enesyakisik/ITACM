@@ -30,19 +30,20 @@
 
 - 🖥 **Dahili web arayüzü** — backend'in kendisi tarafından sunulur (build adımı yok): Giriş, Dashboard, Donanım Envanteri (toplu işlemler, QR kodlar, global arama), kişi bazlı cihaz geçmişli Personel Rehberi, **yazdırılabilir tutanaklı** zimmet sepeti, yazılım (lisans) zimmeti, Lisanslar, Sarf Malzemeleri, Bakım ve login denetimli BT Kullanıcı yönetimi. Başlattıktan sonra `http://localhost:8000` adresini açın.
 - 🚀 **İlk kullanım sihirbazı (onboarding)** — ilk açılışta şirket adı, logo ve Admin hesabını belirleyin; marka tüm arayüze ve yazdırılan zimmet tutanaklarına uygulanır (sonradan Ayarlar'dan değiştirilebilir).
-- 🧪 **Demo veri seti** — `npm run seed:demo`, postgres kurulumunu 500 personellik gerçekçi bir şirketle doldurur (773 varlık, tutanaklar, denetim geçmişi, yazılım zimmetleri).
+- 🧪 **Demo veri seti** — `npm run seed:demo` postgres'i gerçekçi bir şirketle doldurur; `SEED_EMPLOYEES=2000 npm run seed:demo -- --reset` ile ölçeklenir (varlık, lisans, onarım hepsi orantılı artar).
 - 🔐 **Rol tabanlı yetkilendirme** — her endpoint'te `Owner`, `Admin`, `Helpdesk`, `Viewer` rolleri
-- 💻 **Donanım envanteri** — varlık etiketi (benzersiz, QR kodlu), seri no, MAC adresleri, teknik özellikler, garanti
+- 💻 **Donanım envanteri** — varlık etiketi (benzersiz, QR kodlu), seri no, MAC adresleri, teknik özellikler; ayrıca kişilere zimmetlenebilen aksesuar kategorileri (klavye, mouse, kulaklık, docking station, webcam)
 - 🤝 **Atomik zimmet sepeti** — birden çok varlığı tek "ya hep ya hiç" transaction'ı ile çalışana zimmetleyin; yazdırılabilir **Zimmet Tutanağı** otomatik oluşur
-- 🛠 **Bakım yaşam döngüsü** — servise gönder / geri al / hurdaya ayır; onarım öncesi zimmet durumu otomatik geri yüklenir
-- 📄 **Yazılım lisansları** — koltuk (seat) havuzları, atomik tahsis/bırakma, 30 gün kala bitiş uyarıları
+- 🎨 **Özelleştirilebilir zimmet şablonu** — canlı önizlemeli editör (Ayarlar → Customize Zimmet Template): tutanakta hangi bölüm, kolon, başlık ve etiketlerin görüneceğini seçin
+- 🛠 **Bakım yaşam döngüsü** — servise gönder / geri al / hurdaya ayır; onarım öncesi durum otomatik geri yüklenir; onarım evrakları (fatura, servis raporu, foto) cihaza bağlı kalır
+- 📄 **Yazılım lisansları** — koltuk havuzları, atomik tahsis/bırakma, 30 gün kala uyarılar ve lisansın kimlerde olduğunun CSV export'u
 - 📦 **Sarf malzemeleri** — stok hareketleri ve kritik stok uyarıları
 - 📊 **Dashboard özetleri** — duruma göre varlık sayıları, uyarılar, son zimmet hareketleri
-- 🧾 **Tam denetim izi (audit log)** — her zimmet/iade/onarım/ilerleme notu kim/ne zaman/neden bilgisiyle kayıtlı; kullanıcı bazlı login geçmişi
-- ⏳ **Ürün yaşam döngüsü yönetimi** — kategori başına yaşam süresi (ay) Ayarlar'dan merkezi olarak belirlenir; her varlıkta EOL tarihi, envanterde "EOL soon"/gecikti rozetleri ve lifecycle raporları
-- 📈 **Raporlar & Özel Rapor Oluşturucu** — 6 hazır rapor + oluşturucu (7 veri kaynağı × seçilebilir kolon × filtre), Excel uyumlu CSV veya şirket antetli yazdırma
+- 🧾 **Tam denetim izi (audit log)** — her zimmet/iade/onarım/yazılım-zimmeti kim/ne zaman bilgisiyle kişi bazlı aktivite zaman çizgisinde; kullanıcı bazlı login geçmişi
+- ⏳ **Ürün yaşam döngüsü yönetimi** — kategori başına yaşam süresi (ay) + cihaza özel override (ör. MacBook 5 yıl); her varlıkta EOL tarihi ve "EOL soon"/gecikti rozetleri
+- 📈 **Raporlar & Özel Rapor Oluşturucu** — 19 gruplu hazır rapor + oluşturucu (7 veri kaynağı × seçilebilir kolon × filtre), Excel uyumlu CSV veya antetli yazdırma
 - 🗂 **Ürün kataloğu** — kategori bazlı marka/model listeleri merkezi yönetilir ve varlık formunu besler; asset tag'ler sistem tarafından sıralı atanır
-- 📁 **Belge arşivi** — her zimmet tutanağı kişi bazında otomatik dosyalanır; imzalı taramalar yüklenebilir (veritabanında güvenle saklanır)
+- 📁 **Belge arşivi** — kişi bazlı imzalı zimmet taramaları ve cihaz bazlı onarım evrakları yüklenir (veritabanında güvenle saklanır, yedeklere dahil)
 
 ## Hızlı başlangıç — Docker Compose
 

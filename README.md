@@ -29,19 +29,20 @@
 
 - 🖥 **Built-in web UI** — served by the backend itself (no build step): Login, Dashboard, Hardware Inventory (bulk actions, QR codes, global search), Employee Directory with per-employee device history, Handover basket with **printable receipt**, software (license) assignment, Licenses, Consumables, Maintenance and IT User management with login auditing. Open `http://localhost:8000` after starting.
 - 🚀 **First-run onboarding** — set company name, logo and the Admin account on first launch; branding is applied across the UI and the printed handover forms (change later via Settings).
-- 🧪 **Demo dataset** — `npm run seed:demo` fills a postgres instance with a realistic 500-employee company (773 assets, receipts, audit history, software assignments) for evaluation.
+- 🧪 **Demo dataset** — `npm run seed:demo` fills a postgres instance with a realistic company for evaluation; scale it with `SEED_EMPLOYEES=2000 npm run seed:demo -- --reset` (assets, licenses, repairs all scale proportionally).
 - 🔐 **Role-based access control** — `Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on every endpoint
-- 💻 **Hardware inventory** — asset tags (unique, QR-encoded), serials, MAC addresses, specs, warranty
+- 💻 **Hardware inventory** — asset tags (unique, QR-encoded), serials, MAC addresses, specs, plus accessory categories (keyboard, mouse, headset, docking station, webcam) that can be assigned to people
 - 🤝 **Atomic handover basket** — assign multiple assets to an employee in one all-or-nothing transaction, producing a printable handover receipt (Zimmet Tutanağı)
-- 🛠 **Maintenance lifecycle** — send to repair / return / scrap, with the pre-repair assignment state restored automatically
-- 📄 **Software licenses** — seat pools with atomic claim/release and 30-day expiry alerts
+- 🎨 **Customizable handover template** — a live-preview editor (Settings → Customize Zimmet Template) to choose which sections, columns, titles and labels appear on the printed/PDF form
+- 🛠 **Maintenance lifecycle** — send to repair / return / scrap, with the pre-repair assignment state restored automatically; attach repair paperwork (invoices, service reports, photos) that stays accessible from the device
+- 📄 **Software licenses** — seat pools with atomic claim/release, 30-day expiry alerts, and CSV export of who holds each license
 - 📦 **Consumables** — stock movements with low-stock alerts
 - 📊 **Dashboard aggregates** — asset counts by status, alerts, recent handover activity
-- 🧾 **Full audit trail** — every assign/return/repair/progress-note is logged with who/when/why; per-user login history
-- ⏳ **Product lifecycle management** — set a lifecycle duration (months) per category once in Settings; every asset shows its EOL date, "EOL soon"/overdue flags in inventory, and lifecycle reports
-- 📈 **Reports & Custom Report Builder** — six preset reports plus a builder (7 data sources × selectable columns × filters), exported as Excel-friendly CSV or printed with company letterhead
+- 🧾 **Full audit trail** — every assign/return/repair/software-zimmet is logged with who/when/why on a per-employee activity timeline; per-user login history
+- ⏳ **Product lifecycle management** — a lifecycle duration (months) per category, plus an optional per-asset override (e.g. MacBooks at 5 years); every asset shows its EOL date and "EOL soon"/overdue flags
+- 📈 **Reports & Custom Report Builder** — 19 grouped preset reports plus a builder (7 data sources × selectable columns × filters), exported as Excel-friendly CSV or printed with company letterhead
 - 🗂 **Product catalog** — centrally managed brand/model & spec lists per category feed the asset form dropdowns; asset tags are system-assigned and sequential
-- 📁 **Document archive** — every handover form is auto-filed per employee; upload signed scans (stored securely in the database)
+- 📁 **Document archive** — upload signed handover scans per employee and repair documents per device (stored securely in the database, covered by backups)
 
 ## Quick start — Docker Compose
 

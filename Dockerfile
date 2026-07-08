@@ -9,6 +9,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
 COPY public ./public
+COPY scripts ./scripts
 COPY server.js ./
 
 # Run as the unprivileged node user
