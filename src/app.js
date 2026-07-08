@@ -62,7 +62,9 @@ function createApp() {
   // scan before the route is reached.
   const jsonSmall = express.json({ limit: '1mb' });
   app.use((req, res, next) => {
-    if (req.method === 'POST' && /^\/api\/employees\/[^/]+\/documents\/?$/.test(req.path)) return next();
+    // Document-upload routes carry base64 scans and use their own 12MB parser;
+    // skip the small global parser so it doesn't reject them first.
+    if (req.method === 'POST' && /^\/api\/(employees|maintenance)\/[^/]+\/documents\/?$/.test(req.path)) return next();
     return jsonSmall(req, res, next);
   });
 

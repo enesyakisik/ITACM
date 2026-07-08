@@ -826,10 +826,13 @@ async function showQrModal(asset) {
 }
 
 async function showAssetDetail(id, onChange) {
-  const [x, repairs] = await Promise.all([
+  const [x, repairs, repairDocs] = await Promise.all([
     api(`/assets/${id}`),
     api(`/maintenance?assetId=${encodeURIComponent(id)}`).catch(() => []), // Viewer role → 403 → []
+    api(`/maintenance/asset/${encodeURIComponent(id)}/documents`).catch(() => []),
   ]);
+  const docsByLog = {};
+  repairDocs.forEach((d) => { (docsByLog[d.maintenanceId] = docsByLog[d.maintenanceId] || []).push(d); });
   const s = x.specs || {};
   const canEdit = Auth.can('canManageAssets');
   const refresh = () => { if (onChange) onChange(); };
@@ -884,6 +887,9 @@ async function showAssetDetail(id, onChange) {
             <span style="margin-left:auto" class="cell-sub">Cost: <strong>${Number(m.cost || 0).toFixed(2)}</strong></span>
             ${m.resolutionNote ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ Resolution: ${esc(m.resolutionNote)}</span>` : ''}
             ${notes.length ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ Notes: ${notes.map((n) => esc(n)).join(' · ')}</span>` : ''}
+            ${(docsByLog[m.id] || []).length ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">
+              <span class="ms ms-sm" style="vertical-align:-2px">attach_file</span> ${(docsByLog[m.id] || []).map((d) =>
+                `<a href="#" data-mdoc-dl="${esc(d.id)}" style="color:var(--primary)">${esc(d.filename)}</a>`).join(' · ')}</span>` : ''}
           </div>`;
         }).join('')}`,
     foot: `
@@ -896,6 +902,10 @@ async function showAssetDetail(id, onChange) {
         ${x.status === 'In Stock' ? '<button class="btn btn-primary" id="ad-handover"><span class="ms">assignment_turned_in</span> Handover</button>' : ''}` : ''}`,
     onMount(overlay) {
       $('#ad-qr', overlay).addEventListener('click', () => showQrModal(x));
+      overlay.querySelectorAll('[data-mdoc-dl]').forEach((a) => a.addEventListener('click', (e) => {
+        e.preventDefault();
+        downloadAuthed(`/api/maintenance/documents/${a.dataset.mdocDl}/download`);
+      }));
       const adHo = $('#ad-handover', overlay);
       if (adHo) adHo.addEventListener('click', () => { closeModal(); location.hash = '#/handover'; });
       const adEdit = $('#ad-edit', overlay);
@@ -2350,14 +2360,37 @@ Views.catalog = async function (el) {
 };
 
 /* Repair progress notes: view + append; every note also lands in device history. */
-function showMaintNotes(log, onDone) {
+/* Fetch a protected file with the Bearer token and save it (a plain <a> can't
+   carry the Authorization header). Shared by all document downloads. */
+async function downloadAuthed(url) {
+  try {
+    const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + Auth.token } });
+    if (!resp.ok) throw new Error('Download failed');
+    const blob = await resp.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const dl = document.createElement('a');
+    dl.href = objUrl;
+    dl.download = (resp.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/)?.[1] || 'document';
+    dl.click();
+    setTimeout(() => URL.revokeObjectURL(objUrl), 5000);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+const fmtBytes = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+
+async function showMaintNotes(log, onDone) {
   if (!log) return;
   const notes = log.progressNotes || [];
+  const canDelDoc = Auth.can('canManageUsers');
+  const docs = await api(`/maintenance/${log.id}/documents`).catch(() => []);
   openModal({
-    title: `Repair notes — ${log.assetTag}`,
+    title: `Repair notes & documents — ${log.assetTag}`,
+    wide: true,
     body: `
       <div class="cell-sub" style="margin-bottom:12px">${esc(log.serviceCompany)} • ${esc(log.issueDescription)}
         • sent ${fmtDate(log.sentDate)}${log.returnDate ? ' • closed ' + fmtDate(log.returnDate) : ''}</div>
+
+      <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">Progress Notes (${notes.length})</h3>
       ${notes.length === 0 ? '<div class="cell-sub" style="margin-bottom:8px">No progress notes yet.</div>' :
         notes.map((n) => `
         <div class="history-item" style="flex-wrap:wrap">
@@ -2368,7 +2401,32 @@ function showMaintNotes(log, onDone) {
       <div class="form-field" style="margin-top:14px">
         <label>Add progress note <span class="ob-hint">(also recorded in the device history)</span></label>
         <textarea id="mn-new-note" placeholder="e.g. Parça bekleniyor — ekran paneli siparişi verildi"></textarea>
-      </div>`,
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 8px">
+        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0">Documents (${docs.length})</h3>
+        <button class="btn btn-outline btn-sm" id="mn-upload-btn"><span class="ms">upload_file</span> Upload document</button>
+      </div>
+      <div class="cell-sub" style="margin-bottom:8px">Service invoice, repair report or photos — kept with the device (PDF or image, max 12MB).</div>
+      <input type="file" id="mn-doc-file" accept="application/pdf,image/*" class="hidden">
+      ${docs.length === 0 ? '<div class="table-empty">No documents yet.</div>' : `
+      <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
+        <thead><tr><th>Document</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
+        <tbody>
+          ${docs.map((d) => `
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:8px">
+              <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
+              <span class="cell-title">${esc(d.filename)}</span></div></td>
+            <td class="cell-sub">${fmtBytes(d.byteSize || 0)}</td>
+            <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' • ' + esc(d.uploadedByName) : ''}</td>
+            <td class="actions">
+              <button class="btn btn-outline btn-sm" data-mdoc-dl="${esc(d.id)}"><span class="ms">download</span></button>
+              ${canDelDoc ? `<button class="btn btn-outline btn-sm" data-mdoc-del="${esc(d.id)}"><span class="ms">delete</span></button>` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`}`,
     foot: `<button class="btn btn-outline" data-close>Close</button>
            <button class="btn btn-primary" id="mn-add-note"><span class="ms">add_comment</span> Add Note</button>`,
     onMount(overlay) {
@@ -2383,6 +2441,38 @@ function showMaintNotes(log, onDone) {
           if (onDone) onDone();
         } catch (err) { toast(err.message, 'error'); }
       });
+
+      const upBtn = $('#mn-upload-btn', overlay);
+      const upFile = $('#mn-doc-file', overlay);
+      upBtn.addEventListener('click', () => upFile.click());
+      upFile.addEventListener('change', async () => {
+        const file = upFile.files[0];
+        if (!file) return;
+        if (file.size > 12 * 1024 * 1024) { toast('File too large — max 12MB', 'error'); return; }
+        upBtn.disabled = true;
+        try {
+          const base64 = await new Promise((res, rej) => {
+            const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+          });
+          await api(`/maintenance/${log.id}/documents`, {
+            method: 'POST', body: { filename: file.name, mime: file.type || 'application/pdf', base64 },
+          });
+          toast(`"${file.name}" uploaded to ${log.assetTag}`, 'success');
+          showMaintNotes(log, onDone); // reopen with the document listed
+          if (onDone) onDone();
+        } catch (err) { toast(err.message, 'error'); upBtn.disabled = false; }
+      });
+
+      overlay.querySelectorAll('[data-mdoc-dl]').forEach((b) =>
+        b.addEventListener('click', () => downloadAuthed(`/api/maintenance/documents/${b.dataset.mdocDl}/download`)));
+      overlay.querySelectorAll('[data-mdoc-del]').forEach((b) => b.addEventListener('click', () => {
+        confirmModal('Delete this repair document permanently?', async () => {
+          await api('/maintenance/documents/' + b.dataset.mdocDel, { method: 'DELETE' });
+          toast('Document deleted', 'success');
+          showMaintNotes(log, onDone);
+          if (onDone) onDone();
+        });
+      }));
     },
   });
 }

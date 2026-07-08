@@ -217,3 +217,22 @@ CREATE TABLE IF NOT EXISTS handover_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_docs_employee ON handover_documents (employee_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_docs_handover ON handover_documents (handover_id);
+
+-- Repair paperwork (service invoices, reports, photos) attached to a maintenance
+-- log. Kept per asset so it stays accessible from the device after the repair is
+-- closed. Content in BYTEA → covered by the same auth/RBAC and DB backups.
+CREATE TABLE IF NOT EXISTS maintenance_documents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  maintenance_id   UUID REFERENCES maintenance_logs(id) ON DELETE CASCADE,
+  asset_id         UUID NOT NULL,
+  asset_tag        TEXT,
+  filename         TEXT NOT NULL,
+  mime             TEXT NOT NULL,
+  byte_size        INTEGER NOT NULL,
+  content          BYTEA NOT NULL,
+  uploaded_by      TEXT,
+  uploaded_by_name TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_maint_docs_asset ON maintenance_documents (asset_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_maint_docs_log ON maintenance_documents (maintenance_id);

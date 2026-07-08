@@ -1,9 +1,54 @@
-const router = require('express').Router();
+const express = require('express');
+const router = express.Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { maintenanceService } = require('../services');
+const { maintenanceService, documentService } = require('../services');
+const { HttpError } = require('../utils/httpError');
 
 router.use(authenticate, requireRole('Owner', 'Admin', 'Helpdesk'));
+
+/* ---- Repair paperwork (invoices, service reports, photos) — kept per asset so
+   it stays reachable from the device after the repair closes. Defined before the
+   generic /:id routes so the literal paths win. ---- */
+
+/** GET /api/maintenance/asset/:assetId/documents — all repair docs for a device. */
+router.get('/asset/:assetId/documents', asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await documentService.listMaintenanceDocsByAsset(req.params.assetId) });
+}));
+
+/** GET /api/maintenance/documents/:docId/download — stream a repair document. */
+router.get('/documents/:docId/download', asyncHandler(async (req, res) => {
+  const doc = await documentService.getMaintenanceDoc(req.params.docId);
+  res.setHeader('Content-Type', doc.mime || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${doc.filename}"`);
+  res.send(doc.buffer);
+}));
+
+/** DELETE /api/maintenance/documents/:docId — remove a repair document (Owner/Admin). */
+router.delete('/documents/:docId', requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await documentService.deleteMaintenanceDoc(req.params.docId) });
+}));
+
+/** GET /api/maintenance/:id/documents — repair docs attached to one log. */
+router.get('/:id/documents', asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await documentService.listMaintenanceDocsByLog(req.params.id) });
+}));
+
+/** POST /api/maintenance/:id/documents — upload a repair document. Body: { filename, mime, base64 }. */
+router.post('/:id/documents', express.json({ limit: '12mb' }), asyncHandler(async (req, res) => {
+  const { filename, mime, base64 } = req.body || {};
+  if (!filename || !base64) throw HttpError.badRequest('filename and base64 are required');
+  const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+  if (mime && !allowed.includes(mime)) throw HttpError.badRequest('Only PDF or image files are allowed');
+  const log = await maintenanceService.getLog(req.params.id);
+  const buffer = Buffer.from(String(base64).split(',').pop(), 'base64');
+  const saved = await documentService.saveMaintenanceDoc({
+    maintenanceId: log.id, assetId: log.assetId, assetTag: log.assetTag,
+    filename, mime: mime || 'application/pdf', buffer,
+    uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
+  });
+  res.status(201).json({ success: true, data: saved });
+}));
 
 /** GET /api/maintenance — repair logs; ?open=true for in-flight repairs, ?assetId= per asset. */
 router.get('/', asyncHandler(async (req, res) => {

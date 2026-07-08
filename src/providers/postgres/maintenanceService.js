@@ -147,4 +147,11 @@ async function listMaintenanceLogs({ open, assetId, limit = 100 } = {}) {
   return mapRows(rows);
 }
 
-module.exports = { sendToRepair, closeRepair, listMaintenanceLogs, addRepairNote };
+async function getLog(id) {
+  if (!isUuid(id)) throw HttpError.notFound(`Maintenance log ${id} not found`);
+  const { rows } = await query('SELECT * FROM maintenance_logs WHERE id = $1', [id]);
+  if (!rows[0]) throw HttpError.notFound(`Maintenance log ${id} not found`);
+  return mapRows(rows)[0];
+}
+
+module.exports = { sendToRepair, closeRepair, listMaintenanceLogs, addRepairNote, getLog };
