@@ -466,6 +466,16 @@ table.r-items td.mono { font-family: var(--mono); font-size: 8.5pt; }
 .tc-preview-scroll { max-height: 64vh; overflow: auto; background: var(--surface-low); border-radius: 12px; padding: 14px; }
 #tc-preview { transform: scale(.62); transform-origin: top left; width: 161%; }
 
+/* Printable Code 128 asset labels (barcode + product info) */
+.label-sheet { display: flex; flex-wrap: wrap; gap: 4mm; align-content: flex-start; }
+.asset-label { width: 58mm; box-sizing: border-box; border: 1px solid #000; border-radius: 2mm; padding: 3mm;
+  text-align: center; color: #000; background: #fff; font-family: var(--font); page-break-inside: avoid; }
+.asset-label .al-co { font-size: 7pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.asset-label .al-model { font-size: 9pt; font-weight: 700; margin: 1mm 0; }
+.asset-label .al-bc { margin: 1mm 0; line-height: 0; }
+.asset-label .al-bc svg { max-width: 100%; height: auto; }
+.asset-label .al-meta { display: flex; justify-content: space-between; gap: 2mm; font-size: 7pt; margin-top: 1mm; }
+
 .print-root { display: none; }
 @media print {
   body > *:not(.print-root) { display: none !important; }

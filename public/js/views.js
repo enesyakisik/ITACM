@@ -44,6 +44,26 @@ function lifecycleLabel(x) {
     : `${l.months} months — EOL ${fmtDate(l.eol)} (${Math.min(l.pct, 100)}% elapsed)`;
 }
 
+/* ---- Printable Code 128 asset labels (barcode + product info) ---- */
+function assetLabelHTML(a) {
+  let bc = '';
+  try { bc = code128SVG(a.assetTag, { height: 36, moduleWidth: 2, margin: 6 }); } catch { bc = `<div class="mono">${esc(a.assetTag)}</div>`; }
+  return `<div class="asset-label">
+    <div class="al-co">${esc((AppConfig.companyName || 'IT Asset Control Pro').toUpperCase())}</div>
+    <div class="al-model">${esc(a.brand || '')} ${esc(a.model || '')}</div>
+    <div class="al-bc">${bc}</div>
+    <div class="al-meta"><span>${esc(a.category || '')}</span><span class="mono">SN ${esc(a.serialNumber || '—')}</span></div>
+  </div>`;
+}
+
+/** Fill the print sheet with one barcode label per asset and open the print dialog. */
+function printAssetLabels(assets) {
+  const list = (assets || []).filter(Boolean);
+  if (!list.length) return toast('Select at least one asset to print labels', 'error');
+  $('#print-root').innerHTML = `<div class="label-sheet">${list.map(assetLabelHTML).join('')}</div>`;
+  window.print();
+}
+
 /* =============================== DASHBOARD =============================== */
 Views.dashboard = async function (el) {
   const d = await api('/dashboard/stats');
@@ -438,6 +458,7 @@ Views.assets = async function (el, params = {}) {
         <span class="ms" style="color:var(--indigo-700)">check_box</span>
         <strong>${selected.size} selected</strong>
         <span class="spacer"></span>
+        <button class="btn btn-outline btn-sm" id="bulk-labels"><span class="ms">barcode</span> Print Labels</button>
         <button class="btn btn-outline btn-sm" id="bulk-return"><span class="ms">undo</span> Return to Stock</button>
         <button class="btn btn-outline btn-sm" id="bulk-repair"><span class="ms">build</span> Send to Repair</button>
         <button class="btn btn-danger btn-sm" id="bulk-scrap"><span class="ms">delete</span> Scrap</button>
@@ -445,6 +466,8 @@ Views.assets = async function (el, params = {}) {
       </div>`;
 
     const pick = () => items.filter((x) => selected.has(x.id));
+
+    $('#bulk-labels', slot).addEventListener('click', () => printAssetLabels(pick()));
 
     $('#bulk-clear', slot).addEventListener('click', () => {
       selected.clear();
@@ -895,6 +918,7 @@ async function showAssetDetail(id, onChange) {
     foot: `
       <button class="btn btn-outline" data-close>Close</button>
       <button class="btn btn-outline" id="ad-qr"><span class="ms">qr_code_2</span> QR</button>
+      <button class="btn btn-outline" id="ad-label"><span class="ms">barcode</span> Label</button>
       ${canEdit ? `
         <button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> Edit</button>
         ${x.status === 'Assigned' ? '<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> Return</button>' : ''}
@@ -902,6 +926,7 @@ async function showAssetDetail(id, onChange) {
         ${x.status === 'In Stock' ? '<button class="btn btn-primary" id="ad-handover"><span class="ms">assignment_turned_in</span> Handover</button>' : ''}` : ''}`,
     onMount(overlay) {
       $('#ad-qr', overlay).addEventListener('click', () => showQrModal(x));
+      $('#ad-label', overlay).addEventListener('click', () => printAssetLabels([x]));
       overlay.querySelectorAll('[data-mdoc-dl]').forEach((a) => a.addEventListener('click', (e) => {
         e.preventDefault();
         downloadAuthed(`/api/maintenance/documents/${a.dataset.mdocDl}/download`);
