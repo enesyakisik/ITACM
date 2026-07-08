@@ -1225,7 +1225,7 @@ async function showEmployeeDetail(emp) {
         upFile.addEventListener('change', async () => {
           const file = upFile.files[0];
           if (!file) return;
-          if (file.size > 12 * 1024 * 1024) { toast('File too large — max 12MB', 'error'); return; }
+          if (file.size > 8 * 1024 * 1024) { toast('File too large — max 8MB', 'error'); return; }
           upBtn.disabled = true;
           try {
             const base64 = await new Promise((res, rej) => {
@@ -2407,7 +2407,7 @@ async function showMaintNotes(log, onDone) {
         <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0">Documents (${docs.length})</h3>
         <button class="btn btn-outline btn-sm" id="mn-upload-btn"><span class="ms">upload_file</span> Upload document</button>
       </div>
-      <div class="cell-sub" style="margin-bottom:8px">Service invoice, repair report or photos — kept with the device (PDF or image, max 12MB).</div>
+      <div class="cell-sub" style="margin-bottom:8px">Service invoice, repair report or photos — kept with the device (PDF / PNG / JPEG / WebP, max 8MB).</div>
       <input type="file" id="mn-doc-file" accept="application/pdf,image/*" class="hidden">
       ${docs.length === 0 ? '<div class="table-empty">No documents yet.</div>' : `
       <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">

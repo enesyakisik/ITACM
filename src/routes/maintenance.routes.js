@@ -3,7 +3,7 @@ const router = express.Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { maintenanceService, documentService } = require('../services');
-const { HttpError } = require('../utils/httpError');
+const { validateUpload } = require('../utils/uploadGuard');
 
 router.use(authenticate, requireRole('Owner', 'Admin', 'Helpdesk'));
 
@@ -34,17 +34,14 @@ router.get('/:id/documents', asyncHandler(async (req, res) => {
   res.json({ success: true, data: await documentService.listMaintenanceDocsByLog(req.params.id) });
 }));
 
-/** POST /api/maintenance/:id/documents — upload a repair document. Body: { filename, mime, base64 }. */
+/** POST /api/maintenance/:id/documents — upload a repair document. Body: { filename, base64 }. */
 router.post('/:id/documents', express.json({ limit: '12mb' }), asyncHandler(async (req, res) => {
-  const { filename, mime, base64 } = req.body || {};
-  if (!filename || !base64) throw HttpError.badRequest('filename and base64 are required');
-  const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-  if (mime && !allowed.includes(mime)) throw HttpError.badRequest('Only PDF or image files are allowed');
+  // Type detected from the bytes; filename sanitised; client MIME ignored.
+  const { buffer, mime, filename } = validateUpload(req.body || {});
   const log = await maintenanceService.getLog(req.params.id);
-  const buffer = Buffer.from(String(base64).split(',').pop(), 'base64');
   const saved = await documentService.saveMaintenanceDoc({
     maintenanceId: log.id, assetId: log.assetId, assetTag: log.assetTag,
-    filename, mime: mime || 'application/pdf', buffer,
+    filename, mime, buffer,
     uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
   });
   res.status(201).json({ success: true, data: saved });

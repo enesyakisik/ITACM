@@ -417,10 +417,6 @@ function showSettings() {
     return;
   }
   let newLogo = null;
-  const ds = AppConfig.documentStorage || { provider: 'local' };
-  const provField = (id, label, val) =>
-    `<div class="form-field" style="margin-top:8px"><label>${label}</label>
-       <input id="${id}" value="${esc(val || '')}" placeholder="https://…"></div>`;
 
   openModal({
     title: 'Company & branding settings',
@@ -451,20 +447,14 @@ function showSettings() {
         </div>
       </div>
 
-      <div class="gs-section" style="margin:18px 0 6px">Handover Document Storage</div>
-      <p class="cell-sub" style="margin:0 0 10px">Where signed handover forms are archived. <strong>Local</strong> keeps them
-        in your database (access-controlled, covered by backups). SharePoint / Google Drive route copies to your organization's
-        secure cloud folder.</p>
-      <div class="form-field">
-        <label>Storage provider</label>
-        <select id="set-storage">
-          <option value="local" ${ds.provider === 'local' ? 'selected' : ''}>Local (secure, in-database) — recommended</option>
-          <option value="sharepoint" ${ds.provider === 'sharepoint' ? 'selected' : ''}>Microsoft SharePoint / OneDrive</option>
-          <option value="gdrive" ${ds.provider === 'gdrive' ? 'selected' : ''}>Google Drive</option>
-        </select>
-      </div>
-      <div id="set-storage-extra">${ds.provider && ds.provider !== 'local'
-        ? provField('set-folder', 'Destination folder URL', ds.folderUrl) : ''}</div>`,
+      <div class="gs-section" style="margin:18px 0 6px">Handover &amp; Repair Documents</div>
+      <p class="cell-sub" style="margin:0 0 4px">Uploaded signed handover scans and repair paperwork are stored
+        <strong>securely in your database</strong> — access-controlled by role and included in your
+        <code>npm run backup</code> snapshots.</p>
+      <p class="cell-sub" style="margin:0"><span class="ms ms-sm" style="vertical-align:-2px">verified_user</span>
+        Only PDF and image files (PDF / PNG / JPEG / WebP, max 8MB) are accepted; the file type is verified on the server.
+        <em>External cloud storage (SharePoint / Google Drive) is not enabled — it would require a connector configured with
+        your organisation's credentials.</em></p>`,
     foot: `<button class="btn btn-outline" data-close>Cancel</button>
            <button class="btn btn-primary" id="set-save">Save settings</button>`,
     onMount(overlay) {
@@ -481,32 +471,19 @@ function showSettings() {
         r.readAsDataURL(file);
       });
       $('#set-customize-tpl', overlay).addEventListener('click', () => showTemplateCustomizer());
-      $('#set-storage', overlay).addEventListener('change', (e) => {
-        const v = e.target.value;
-        $('#set-storage-extra', overlay).innerHTML = v === 'local' ? ''
-          : provField('set-folder', 'Destination folder URL', (AppConfig.documentStorage || {}).folderUrl)
-            + `<p class="cell-sub" style="margin-top:6px"><span class="ms ms-sm">lock</span> Cloud sync uses your organization's
-               ${v === 'sharepoint' ? 'SharePoint' : 'Google Drive'} connector; the folder link is stored, credentials are never kept in the app.</p>`;
-      });
       $('#set-save', overlay).addEventListener('click', async () => {
         try {
-          const provider = $('#set-storage', overlay).value;
-          const documentStorage = { provider };
-          const folder = $('#set-folder', overlay);
-          if (provider !== 'local' && folder) documentStorage.folderUrl = folder.value.trim();
           const saved = await api('/settings', {
             method: 'PUT',
             body: {
               companyName: $('#set-company', overlay).value.trim(),
               companyLogo: newLogo || undefined,
               handoverTerms: $('#set-terms', overlay).value,
-              documentStorage,
             },
           });
           AppConfig.companyName = saved.companyName;
           AppConfig.companyLogo = saved.companyLogo;
           AppConfig.handoverTerms = saved.handoverTerms;
-          AppConfig.documentStorage = saved.documentStorage;
           applyBranding();
           toast('Settings saved', 'success');
           closeModal();

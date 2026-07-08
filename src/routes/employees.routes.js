@@ -3,7 +3,7 @@ const router = express.Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { employeeService, documentService } = require('../services');
-const { HttpError } = require('../utils/httpError');
+const { validateUpload } = require('../utils/uploadGuard');
 
 router.use(authenticate);
 
@@ -47,15 +47,13 @@ router.post('/:id/documents',
   requireRole('Owner', 'Admin', 'Helpdesk'),
   express.json({ limit: '12mb' }),
   asyncHandler(async (req, res) => {
-    const { filename, mime, base64, handoverId } = req.body || {};
-    if (!filename || !base64) throw HttpError.badRequest('filename and base64 are required');
-    const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-    if (mime && !allowed.includes(mime)) throw HttpError.badRequest('Only PDF or image scans are allowed');
-    const buffer = Buffer.from(String(base64).split(',').pop(), 'base64');
+    // The real type is detected from the bytes and the filename is sanitised —
+    // the client-declared MIME is ignored (it can be spoofed).
+    const { buffer, mime, filename } = validateUpload(req.body || {});
     const saved = await documentService.saveDocument({
-      handoverId, employeeId: req.params.id,
+      handoverId: (req.body && req.body.handoverId) || null, employeeId: req.params.id,
       employeeName: (req.body && req.body.employeeName) || null,
-      kind: 'scan', filename, mime: mime || 'application/pdf', buffer,
+      kind: 'scan', filename, mime, buffer,
       uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
     });
     res.status(201).json({ success: true, data: saved });
