@@ -45,10 +45,20 @@ function lifecycleLabel(x) {
 }
 
 /* ---- Printable Code 128 asset labels (barcode + product info) ---- */
-function assetLabelHTML(a) {
+const LABEL_DEFAULTS = { widthMm: 58, barcodeMm: 10, copies: 1 };
+const MM_TO_PX = 96 / 25.4; // CSS: 1mm = 96/25.4 px
+
+function labelOpts() {
+  try { return { ...LABEL_DEFAULTS, ...JSON.parse(localStorage.getItem('itacm:labelOpts') || '{}') }; }
+  catch { return { ...LABEL_DEFAULTS }; }
+}
+
+function assetLabelHTML(a, opts = LABEL_DEFAULTS) {
   let bc = '';
-  try { bc = code128SVG(a.assetTag, { height: 36, moduleWidth: 2, margin: 6 }); } catch { bc = `<div class="mono">${esc(a.assetTag)}</div>`; }
-  return `<div class="asset-label">
+  try {
+    bc = code128SVG(a.assetTag, { height: Math.round(opts.barcodeMm * MM_TO_PX), moduleWidth: 2, margin: 6 });
+  } catch { bc = `<div class="mono">${esc(a.assetTag)}</div>`; }
+  return `<div class="asset-label" style="width:${opts.widthMm}mm">
     <div class="al-co">${esc((AppConfig.companyName || 'IT Asset Control Pro').toUpperCase())}</div>
     <div class="al-model">${esc(a.brand || '')} ${esc(a.model || '')}</div>
     <div class="al-bc">${bc}</div>
@@ -56,12 +66,35 @@ function assetLabelHTML(a) {
   </div>`;
 }
 
-/** Fill the print sheet with one barcode label per asset and open the print dialog. */
+/**
+ * Ask for label dimensions (remembered per browser), then print one label per
+ * asset — in asset-tag order — with the chosen size and copy count.
+ */
 function printAssetLabels(assets) {
-  const list = (assets || []).filter(Boolean);
+  const list = (assets || []).filter(Boolean)
+    .slice().sort((a, b) => String(a.assetTag).localeCompare(String(b.assetTag), undefined, { numeric: true }));
   if (!list.length) return toast('Select at least one asset to print labels', 'error');
-  $('#print-root').innerHTML = `<div class="label-sheet">${list.map(assetLabelHTML).join('')}</div>`;
-  window.print();
+  const cur = labelOpts();
+  formModal({
+    title: `Print labels — ${list.length} asset(s)`,
+    fields: [
+      { name: 'widthMm', label: 'Label width (mm)', type: 'number', required: true, value: cur.widthMm },
+      { name: 'barcodeMm', label: 'Barcode height (mm)', type: 'number', required: true, value: cur.barcodeMm },
+      { name: 'copies', label: 'Copies per asset', type: 'number', required: true, value: cur.copies },
+    ],
+    submitLabel: 'Print',
+    async onSubmit(d) {
+      const opts = {
+        widthMm: Math.min(150, Math.max(25, Number(d.widthMm) || LABEL_DEFAULTS.widthMm)),
+        barcodeMm: Math.min(40, Math.max(5, Number(d.barcodeMm) || LABEL_DEFAULTS.barcodeMm)),
+        copies: Math.min(20, Math.max(1, Math.round(Number(d.copies) || 1))),
+      };
+      localStorage.setItem('itacm:labelOpts', JSON.stringify(opts));
+      const labels = list.flatMap((a) => Array.from({ length: opts.copies }, () => assetLabelHTML(a, opts)));
+      $('#print-root').innerHTML = `<div class="label-sheet">${labels.join('')}</div>`;
+      window.print();
+    },
+  });
 }
 
 /* =============================== DASHBOARD =============================== */
