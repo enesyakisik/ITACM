@@ -12,6 +12,8 @@ module.exports = {
   documentService: require('./documentService'),
   catalogService: require('./catalogService'),
   countService: require('./countService'),
+  lineService: require('./lineService'),
+  importService: require('./importService'),
   ensureDatabase: () => require('./migrate').ensureDatabase(),
   ping: (timeoutMs) => require('./pool').ping(timeoutMs),
   isAuthError: (err) => require('./pool').isAuthError(err),

@@ -65,6 +65,7 @@ function createApp() {
     // Document-upload routes carry base64 scans and use their own 12MB parser;
     // skip the small global parser so it doesn't reject them first.
     if (req.method === 'POST' && /^\/api\/(employees|maintenance)\/[^/]+\/documents\/?$/.test(req.path)) return next();
+    if (req.method === 'POST' && req.path === '/api/import/inventory') return next(); // big CSV payloads
     return jsonSmall(req, res, next);
   });
 
@@ -109,6 +110,8 @@ function createApp() {
   app.use('/api/catalog', require('./routes/catalog.routes'));
   app.use('/api/documents', require('./routes/documents.routes'));
   app.use('/api/counts', require('./routes/counts.routes'));
+  app.use('/api/lines', require('./routes/lines.routes'));
+  app.use('/api/import', require('./routes/import.routes'));
 
   // API 404s stay JSON; anything else falls back to the SPA shell.
   app.use((req, res, next) => {

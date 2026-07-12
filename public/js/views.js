@@ -395,6 +395,7 @@ Views.assets = async function (el, params = {}) {
 
   el.innerHTML = `
     ${pageHead('Hardware Inventory', 'Manage physical devices, laptops, and networking gear.', canEdit ? `
+      <button class="btn btn-outline" id="asset-import"><span class="ms">upload_file</span> Import Excel/CSV</button>
       <button class="btn btn-outline" id="asset-export"><span class="ms">download</span> Export</button>
       <button class="btn btn-primary" id="asset-new"><span class="ms">add</span> Add New Asset</button>` : '')}
 
@@ -588,6 +589,7 @@ Views.assets = async function (el, params = {}) {
   if (canEdit) {
     $('#asset-new', el).addEventListener('click', () => assetForm(null, () => rerender({})));
     $('#asset-export', el).addEventListener('click', () => exportCsv(items));
+    $('#asset-import', el).addEventListener('click', () => showImportModal(() => rerender({})));
   }
   const clearAll = $('#clear-all', el);
   if (clearAll) clearAll.addEventListener('click', (e) => { e.preventDefault(); rerender({ status: '', category: '', location: '', lifecycle: '', search: '', page: 1 }); });
@@ -3674,3 +3676,256 @@ Views.stockcount = async function (el, params = {}) {
 
   renderActive(openId);
 };
+
+/* ============================== MOBILE LINES ============================== */
+/** Search-based employee picker (works with thousands of employees). */
+function pickEmployee(title, onPick) {
+  openModal({
+    title,
+    body: `
+      <div class="search-box"><span class="ms">search</span>
+        <input id="pe-search" placeholder="Search by name, email or department…" autocomplete="off"></div>
+      <div id="pe-list" style="max-height:300px;overflow-y:auto;margin-top:10px">
+        <div class="cell-sub">Type at least 2 characters to search…</div>
+      </div>`,
+    foot: '<button class="btn btn-outline" data-close>Cancel</button>',
+    onMount(overlay) {
+      const inp = $('#pe-search', overlay);
+      const list = $('#pe-list', overlay);
+      let timer = null;
+      const render = (emps) => {
+        list.innerHTML = emps.length === 0 ? '<div class="cell-sub">No matching employees.</div>' :
+          emps.map((p) => `
+          <div class="emp-option" data-pe="${esc(p.id)}" data-pename="${esc(p.fullName)}">
+            <span class="avatar">${esc(initials(p.fullName))}</span>
+            <div class="grow"><strong>${esc(p.fullName)}</strong>
+              <span class="cell-sub">${esc(p.department || '—')} • ${esc(p.email)}</span></div>
+          </div>`).join('');
+        list.querySelectorAll('[data-pe]').forEach((r) => r.addEventListener('click', () => {
+          closeModal();
+          onPick({ id: r.dataset.pe, fullName: r.dataset.pename });
+        }));
+      };
+      inp.focus();
+      inp.addEventListener('input', () => {
+        clearTimeout(timer);
+        const term = inp.value.trim();
+        if (term.length < 2) { list.innerHTML = '<div class="cell-sub">Type at least 2 characters to search…</div>'; return; }
+        timer = setTimeout(async () => {
+          try { render(await api(`/employees?status=Active&limit=30&search=${encodeURIComponent(term)}`)); }
+          catch { render([]); }
+        }, 220);
+      });
+    },
+  });
+}
+
+Views.lines = async function (el, params = {}) {
+  const canEdit = Auth.can('canManageAssets');
+  const q = new URLSearchParams();
+  if (params.search) q.set('search', params.search);
+  if (params.status) q.set('status', params.status);
+  const items = await api('/lines?' + q.toString());
+  const assigned = items.filter((l) => l.currentEmployeeId).length;
+  const monthly = items.filter((l) => l.status === 'Active').reduce((s2, l) => s2 + Number(l.monthlyCost || 0), 0);
+
+  el.innerHTML = `
+    ${pageHead('Mobile Lines', 'Company SIM cards & phone numbers — who holds which line.', canEdit
+      ? '<button class="btn btn-primary" id="line-new"><span class="ms">sim_card</span> New Line</button>' : '')}
+    <div class="grid grid-4" style="margin-bottom:20px">
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Total Lines</h3>${iconChip('sim_card', 'indigo')}</div>
+        <div class="metric-value">${items.length}</div></div>
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Assigned</h3>${iconChip('person', 'blue')}</div>
+        <div class="metric-value">${assigned}</div></div>
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Free</h3>${iconChip('sim_card_download', 'emerald')}</div>
+        <div class="metric-value">${items.filter((l) => !l.currentEmployeeId && l.status === 'Active').length}</div></div>
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Monthly Cost</h3>${iconChip('payments', 'amber')}</div>
+        <div class="metric-value">${monthly.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="search-box" style="width:280px"><span class="ms">search</span>
+          <input type="search" id="line-search" placeholder="Search number, operator, SIM, holder…" value="${esc(params.search || '')}"></div>
+        <select id="line-status" style="width:auto">
+          <option value="">All statuses</option>
+          ${['Active', 'Suspended', 'Cancelled'].map((st) => `<option ${params.status === st ? 'selected' : ''}>${st}</option>`).join('')}
+        </select>
+      </div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Number</th><th>Operator / Plan</th><th>SIM Serial</th><th>Monthly</th><th>Status</th><th>Assigned To</th><th style="text-align:right"></th></tr></thead>
+        <tbody>
+          ${items.length === 0 ? '<tr><td colspan="7" class="table-empty">No mobile lines yet.</td></tr>' :
+            items.map((l) => `
+            <tr>
+              <td class="mono cell-title">${esc(l.phoneNumber)}</td>
+              <td>${esc(l.operator || '—')}<div class="cell-sub">${esc(l.plan || '')}</div></td>
+              <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
+              <td>${l.monthlyCost != null ? Number(l.monthlyCost).toFixed(2) : '—'}</td>
+              <td>${l.status === 'Active' ? '<span class="pill pill-emerald">Active</span>'
+                : l.status === 'Suspended' ? '<span class="pill pill-amber">Suspended</span>'
+                : '<span class="pill pill-rose">Cancelled</span>'}</td>
+              <td>${l.currentEmployeeName ? esc(l.currentEmployeeName) : '<span class="cell-sub">—</span>'}</td>
+              <td class="actions">${canEdit ? `
+                ${l.currentEmployeeId
+                  ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> Take back</button>`
+                  : (l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> Assign</button>` : '')}
+                <button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">Edit</button>` : ''}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="table-foot">${items.length} line(s)</div>
+    </div>`;
+
+  const rerender = (p) => Views.lines(el, { ...params, ...p });
+  $('#line-search', el).addEventListener('change', (e) => rerender({ search: e.target.value }));
+  $('#line-status', el).addEventListener('change', (e) => rerender({ status: e.target.value }));
+
+  const lineForm = (line) => formModal({
+    title: line ? `Edit ${line.phoneNumber}` : 'New Mobile Line',
+    fields: [
+      { name: 'phoneNumber', label: 'Phone number *', required: true, value: line?.phoneNumber, placeholder: '+90 5xx xxx xx xx' },
+      { name: 'operator', label: 'Operator', value: line?.operator, placeholder: 'Turkcell / Vodafone / Türk Telekom' },
+      { name: 'plan', label: 'Plan / tariff', value: line?.plan, placeholder: 'e.g. Kurumsal 20GB' },
+      { name: 'simSerial', label: 'SIM serial (ICCID)', value: line?.simSerial },
+      { name: 'monthlyCost', label: 'Monthly cost', type: 'number', step: '0.01', value: line?.monthlyCost },
+      { name: 'status', label: 'Status', type: 'select', value: line?.status || 'Active', options: ['Active', 'Suspended', 'Cancelled'] },
+      { name: 'notes', label: 'Notes', type: 'textarea', full: true, value: line?.notes },
+    ],
+    async onSubmit(d) {
+      if (line) await api(`/lines/${line.id}`, { method: 'PUT', body: d });
+      else await api('/lines', { method: 'POST', body: d });
+      toast(line ? 'Line updated' : 'Line registered', 'success');
+      rerender({});
+    },
+  });
+
+  if (canEdit) $('#line-new', el).addEventListener('click', () => lineForm(null));
+
+  bindView(el, async (e) => {
+    const b = e.target.closest('button'); if (!b || !canEdit) return;
+    if (b.dataset.lineEdit) return lineForm(items.find((l) => l.id === b.dataset.lineEdit));
+    if (b.dataset.lineAssign) {
+      return pickEmployee(`Assign ${b.dataset.num} to…`, async (emp) => {
+        try {
+          const r = await api(`/lines/${b.dataset.lineAssign}/assign`, { method: 'POST', body: { employeeId: emp.id } });
+          toast(`${r.phoneNumber} assigned to ${r.currentEmployeeName}`, 'success');
+          rerender({});
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    }
+    if (b.dataset.lineUnassign) {
+      try {
+        const r = await api(`/lines/${b.dataset.lineUnassign}/unassign`, { method: 'POST' });
+        toast(`${r.phoneNumber} taken back`, 'success');
+        rerender({});
+      } catch (err) { toast(err.message, 'error'); }
+    }
+  });
+};
+
+/* ========================== EXCEL/CSV MIGRATION ========================== */
+const IMPORT_COLUMNS = ['employeeName', 'employeeEmail', 'department', 'title', 'assetTag',
+  'category', 'brand', 'model', 'serialNumber', 'mac', 'cpu', 'ram', 'storage', 'os', 'location', 'purchaseDate'];
+
+function downloadImportTemplate() {
+  const sample1 = ['Ahmet Yılmaz', 'ahmet.yilmaz@firma.com', 'Bilgi Teknolojileri', 'Sistem Uzmanı', '',
+    'Laptop', 'Dell', 'Latitude 5540', 'SN-ORNEK-1', 'AA:BB:CC:DD:EE:FF', 'Intel i5-1235U', '16GB', '512GB SSD', 'Windows 11 Pro', 'Main Office', '2024-03-15'];
+  const sample2 = ['', '', '', '', '', 'Monitor', 'LG', '27UP850', 'SN-ORNEK-2', '', '', '', '', '', 'Main Office', '2023-11-02'];
+  csvDownload('itacm-import-template.csv', IMPORT_COLUMNS, [sample1, sample2]);
+  toast('Template downloaded — fill it in Excel, save as CSV, then upload', 'success');
+}
+
+/** Map arbitrary header spellings (case/space tolerant) onto the template keys. */
+function normalizeImportRows(rows) {
+  const canon = Object.fromEntries(IMPORT_COLUMNS.map((c) => [c.toLowerCase(), c]));
+  return rows.map((r) => {
+    const out = {};
+    for (const [k, v] of Object.entries(r)) {
+      const key = canon[String(k).replace(/\s+/g, '').toLowerCase()];
+      if (key) out[key] = v;
+    }
+    return out;
+  });
+}
+
+function showImportModal(onDone) {
+  let rows = null;
+  openModal({
+    title: 'Migrate inventory from Excel / CSV',
+    wide: true,
+    body: `
+      <div class="gs-item" style="align-items:flex-start;margin-bottom:14px">
+        ${iconChip('description', 'indigo')}
+        <div style="flex:1">
+          <div class="cell-title">1 — Download the template</div>
+          <div class="cell-sub">One row per device. Fill the employee columns to auto-assign (zimmet) the device to that
+            person; leave them blank for stock. Employees, brand/model catalog entries, asset tags and handover records
+            are all created automatically.</div>
+          <button class="btn btn-outline btn-sm" id="imp-template" style="margin-top:8px"><span class="ms">download</span> Download template (CSV — opens in Excel)</button>
+        </div>
+      </div>
+      <div class="gs-item" style="align-items:flex-start;margin-bottom:14px">
+        ${iconChip('upload_file', 'emerald')}
+        <div style="flex:1">
+          <div class="cell-title">2 — Upload your filled file</div>
+          <div class="cell-sub">Save from Excel as <strong>CSV</strong> (both ; and , separators work; Turkish characters are fine).</div>
+          <input type="file" id="imp-file" accept=".csv,text/csv" style="margin-top:8px">
+        </div>
+      </div>
+      <div id="imp-preview"></div>`,
+    foot: `<button class="btn btn-outline" data-close>Cancel</button>
+           <button class="btn btn-primary" id="imp-commit" disabled><span class="ms">rocket_launch</span> Import</button>`,
+    onMount(overlay) {
+      const preview = $('#imp-preview', overlay);
+      const commitBtn = $('#imp-commit', overlay);
+      $('#imp-template', overlay).addEventListener('click', downloadImportTemplate);
+
+      $('#imp-file', overlay).addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        preview.innerHTML = '<div class="table-empty">Analysing…</div>';
+        try {
+          const text = await file.text();
+          rows = normalizeImportRows(parseCsv(text));
+          if (!rows.length) throw new Error('No data rows found — is the header row intact?');
+          const plan = await api('/import/inventory', { method: 'POST', body: { rows, dryRun: true } });
+          preview.innerHTML = `
+            <div class="gs-section" style="margin:4px 0 8px">3 — Review the plan</div>
+            <div class="grid grid-4" style="margin-bottom:10px">
+              <div class="card card-pad metric"><h3 class="card-title">Devices</h3><div class="metric-value">${plan.assets}</div></div>
+              <div class="card card-pad metric"><h3 class="card-title">New employees</h3><div class="metric-value">${plan.employeesNew}</div></div>
+              <div class="card card-pad metric"><h3 class="card-title">Handovers</h3><div class="metric-value">${plan.handovers}</div></div>
+              <div class="card card-pad metric"><h3 class="card-title">Errors</h3><div class="metric-value" style="color:${plan.errorCount ? 'var(--rose-700)' : 'var(--emerald-600)'}">${plan.errorCount}</div></div>
+            </div>
+            ${plan.errorCount ? `
+            <div class="cell-sub" style="margin-bottom:6px">Rows with errors are <strong>skipped</strong>; everything else imports.</div>
+            <div class="table-wrap" style="max-height:200px;overflow-y:auto"><table class="data">
+              <thead><tr><th style="width:70px">Row</th><th>Problem</th></tr></thead>
+              <tbody>${plan.errors.slice(0, 50).map((er) => `<tr><td class="mono">${er.row}</td><td class="cell-sub">${esc(er.error)}</td></tr>`).join('')}</tbody>
+            </table></div>` : '<div class="cell-sub">✓ Every row is valid.</div>'}`;
+          commitBtn.disabled = plan.assets === 0;
+        } catch (err) {
+          preview.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+          commitBtn.disabled = true;
+          rows = null;
+        }
+      });
+
+      commitBtn.addEventListener('click', async () => {
+        if (!rows) return;
+        commitBtn.disabled = true;
+        commitBtn.innerHTML = '<span class="ms">hourglass_top</span> Importing…';
+        try {
+          const r = await api('/import/inventory', { method: 'POST', body: { rows, dryRun: false } });
+          toast(`Imported ${r.imported} device(s), ${r.handovers} handover(s), ${r.employees} employee(s)${r.errorCount ? ` — ${r.errorCount} row(s) skipped` : ''}`, 'success');
+          closeModal();
+          if (onDone) onDone();
+        } catch (err) {
+          toast(err.message, 'error');
+          commitBtn.disabled = false;
+          commitBtn.innerHTML = '<span class="ms">rocket_launch</span> Import';
+        }
+      });
+    },
+  });
+}

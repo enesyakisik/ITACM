@@ -10,6 +10,7 @@ const ROUTES = {
   '#/assets': { title: 'Hardware', view: 'assets', icon: 'devices' },
   '#/catalog': { title: 'Product Catalog', view: 'catalog', icon: 'category' },
   '#/licenses': { title: 'Software & Licenses', view: 'licenses', icon: 'workspace_premium' },
+  '#/lines': { title: 'Mobile Lines', view: 'lines', icon: 'sim_card' },
   '#/consumables': { title: 'Consumables', view: 'consumables', icon: 'inventory_2' },
   '#/employees': { title: 'Employees', view: 'employees', icon: 'badge' },
   '#/handover': { title: 'Handover Ops', view: 'handover', icon: 'assignment_turned_in' },
@@ -20,10 +21,13 @@ const ROUTES = {
 };
 
 function renderNav() {
+  // Nav labels come from the i18n dictionary (nav.<view>); untranslated views
+  // fall back to the English title.
+  const label = (r) => { const k = 'nav.' + r.view; const v = t(k); return v === k ? r.title : v; };
   $('#nav').innerHTML = Object.entries(ROUTES)
     .filter(([, r]) => !r.perm || Auth.can(r.perm))
     .map(([hash, r]) =>
-      `<a href="${hash}" data-route="${hash}"><span class="ms">${r.icon}</span> ${esc(r.title)}</a>`)
+      `<a href="${hash}" data-route="${hash}"><span class="ms">${r.icon}</span> ${esc(label(r))}</a>`)
     .join('');
 }
 
@@ -236,6 +240,13 @@ function renderTour() {
 function bindOnboarding() {
   const form = $('#onboarding-form');
 
+  // Language picker: applies immediately to this browser and is saved as the
+  // instance default when setup completes (changeable later in Settings).
+  const langSel = $('#ob-lang');
+  langSel.innerHTML = Object.entries(I18N_LANGS)
+    .map(([code, name]) => `<option value="${code}" ${i18nLang() === code ? 'selected' : ''}>${name}</option>`).join('');
+  langSel.addEventListener('change', () => setLang(langSel.value));
+
   // Feature tour navigation
   obStep = 0;
   renderTour();
@@ -275,6 +286,7 @@ function bindOnboarding() {
         adminUsername: form.elements.adminUsername.value.trim(),
         adminEmail: form.elements.adminEmail.value.trim(),
         adminPassword: form.elements.adminPassword.value,
+        language: i18nLang(), // chosen during the tour → instance default
       };
       const res = await fetch('/api/setup', {
         method: 'POST',
@@ -441,6 +453,13 @@ function showSettings() {
             <span class="ob-hint">Separate paragraphs with a blank line; the 2nd paragraph renders italic (TR translation).</span></label>
           <textarea id="set-terms" rows="6">${esc(AppConfig.handoverTerms || '')}</textarea>
         </div>
+        <div class="form-field">
+          <label>Language / Dil <span class="ob-hint">(applies to this browser now; saved as the instance default)</span></label>
+          <select id="set-lang">
+            ${Object.entries(I18N_LANGS).map(([code, name]) =>
+              `<option value="${code}" ${i18nLang() === code ? 'selected' : ''}>${name}</option>`).join('')}
+          </select>
+        </div>
         <div class="form-field full">
           <button type="button" class="btn btn-outline" id="set-customize-tpl">
             <span class="ms">tune</span> Customize Zimmet Template…</button>
@@ -474,12 +493,14 @@ function showSettings() {
       $('#set-customize-tpl', overlay).addEventListener('click', () => showTemplateCustomizer());
       $('#set-save', overlay).addEventListener('click', async () => {
         try {
+          const langChoice = $('#set-lang', overlay).value;
           const saved = await api('/settings', {
             method: 'PUT',
             body: {
               companyName: $('#set-company', overlay).value.trim(),
               companyLogo: newLogo || undefined,
               handoverTerms: $('#set-terms', overlay).value,
+              language: langChoice,
             },
           });
           AppConfig.companyName = saved.companyName;
@@ -488,6 +509,7 @@ function showSettings() {
           applyBranding();
           toast('Settings saved', 'success');
           closeModal();
+          if (langChoice !== i18nLang()) setLang(langChoice); // reloads with the new language
         } catch (err) { toast(err.message, 'error'); }
       });
     },
@@ -603,6 +625,7 @@ function showProfile() {
 /* ---- init ---- */
 async function init() {
   await loadAppConfig();
+  applyStaticI18n(); // translate login/topbar statics per the resolved language
   applyBranding();
   bindOnboarding();
 

@@ -286,3 +286,24 @@ CREATE TABLE IF NOT EXISTS stock_count_scans (
   UNIQUE (count_id, raw)
 );
 CREATE INDEX IF NOT EXISTS idx_scans_count ON stock_count_scans (count_id, scanned_at DESC);
+
+-- Mobile line (SIM / phone number) inventory — assignable to employees like
+-- other zimmet types.
+CREATE TABLE IF NOT EXISTS mobile_lines (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number          TEXT NOT NULL UNIQUE,
+  operator              TEXT,
+  plan                  TEXT,
+  sim_serial            TEXT,
+  monthly_cost          NUMERIC(10, 2),
+  status                TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Suspended', 'Cancelled')),
+  current_employee_id   UUID REFERENCES employees(id),
+  current_employee_name TEXT,
+  notes                 TEXT,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lines_employee ON mobile_lines (current_employee_id);
+
+-- UI language default for the instance (per-browser override in localStorage)
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS language TEXT;

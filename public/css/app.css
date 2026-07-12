@@ -129,6 +129,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .ob-progress-bar { flex: 1; height: 6px; background: var(--surface-container); border-radius: 999px; overflow: hidden; }
 .ob-progress-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--primary-container), var(--primary)); border-radius: 999px; transition: width .35s ease; }
 .ob-skip { border: none; background: none; color: var(--on-surface-variant); font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: var(--font); white-space: nowrap; }
+.ob-lang { width: auto; padding: 4px 8px; font-size: 12px; border-radius: 8px; }
 .ob-skip:hover { color: var(--primary); }
 
 /* a slide */

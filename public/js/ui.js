@@ -181,3 +181,39 @@ function confirmModal(message, onYes) {
     },
   });
 }
+
+/*
+ * Minimal CSV parser for the import flows. Handles quoted fields (with "" as
+ * an escaped quote), CRLF, and auto-detects ; vs , as the separator (Turkish
+ * Excel saves CSV with semicolons). Returns an array of objects keyed by the
+ * header row.
+ */
+function parseCsv(text) {
+  const src = String(text || '').replace(/^﻿/, '');
+  const firstLine = src.slice(0, src.indexOf('\n') === -1 ? src.length : src.indexOf('\n'));
+  const sep = (firstLine.match(/;/g) || []).length >= (firstLine.match(/,/g) || []).length ? ';' : ',';
+
+  const rows = [];
+  let field = '', row = [], inQ = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') { field += '"'; i++; } else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === sep) { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && src[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.some((c) => c.trim() !== '')) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.some((c) => c.trim() !== '')) rows.push(row);
+
+  if (rows.length < 2) return [];
+  const head = rows[0].map((h) => h.trim());
+  return rows.slice(1).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? '').trim()])));
+}

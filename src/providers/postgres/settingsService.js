@@ -6,7 +6,7 @@ const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_S
 
 async function getSettings() {
   const { rows } = await query(
-    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options, document_storage, handover_template, departments FROM app_settings WHERE id = 1'
+    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options, document_storage, handover_template, departments, language FROM app_settings WHERE id = 1'
   );
   const s = rows[0] || {};
   return {
@@ -20,6 +20,7 @@ async function getSettings() {
     departments: (s.departments && s.departments.length) ? s.departments : [...DEFAULT_DEPARTMENTS],
     specOptions: { ...DEFAULT_SPEC_OPTIONS, ...(s.spec_options || {}) },
     documentStorage: s.document_storage || { provider: 'local' },
+    language: s.language || 'en',
     // Merge the saved template over defaults so newly added options appear automatically.
     handoverTemplate: { ...DEFAULT_HANDOVER_TEMPLATE, ...(s.handover_template || {}) },
   };
@@ -77,7 +78,10 @@ function validateSpecOptions(so) {
   }
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage, handoverTemplate, departments }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage, handoverTemplate, departments, language }) {
+  if (language !== undefined && language !== null && !/^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(String(language))) {
+    throw HttpError.badRequest('language must be a short code like "en" or "tr"');
+  }
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -101,7 +105,8 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
        spec_options   = CASE WHEN $8::jsonb IS NOT NULL THEN $8 ELSE spec_options END,
        document_storage = CASE WHEN $9::jsonb IS NOT NULL THEN $9 ELSE document_storage END,
        handover_template = CASE WHEN $10::jsonb IS NOT NULL THEN $10 ELSE handover_template END,
-       departments    = CASE WHEN $11::jsonb IS NOT NULL THEN $11 ELSE departments END
+       departments    = CASE WHEN $11::jsonb IS NOT NULL THEN $11 ELSE departments END,
+       language       = CASE WHEN $12::text IS NOT NULL THEN $12 ELSE language END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecycles ? JSON.stringify(lifecycles) : null,
@@ -110,7 +115,8 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
      specOptions ? JSON.stringify(specOptions) : null,
      documentStorage ? JSON.stringify(documentStorage) : null,
      cleanTemplate ? JSON.stringify(cleanTemplate) : null,
-     departments ? JSON.stringify(departments.map((d) => String(d).trim()).filter(Boolean)) : null]
+     departments ? JSON.stringify(departments.map((d) => String(d).trim()).filter(Boolean)) : null,
+     language ?? null]
   );
   return getSettings();
 }

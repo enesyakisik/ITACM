@@ -19,7 +19,7 @@ router.post('/setup', asyncHandler(async (req, res) => {
     throw HttpError.forbidden('This instance is already set up. Sign in as Admin to change settings.');
   }
 
-  const { companyName, companyLogo, adminUsername, adminEmail, adminPassword } = req.body || {};
+  const { companyName, companyLogo, adminUsername, adminEmail, adminPassword, language } = req.body || {};
   if (!companyName) throw HttpError.badRequest('companyName is required');
 
   const admin = await authProvider.upsertAdmin({
@@ -31,6 +31,7 @@ router.post('/setup', asyncHandler(async (req, res) => {
   const saved = await settingsService.saveSettings({
     companyName,
     companyLogo: companyLogo || undefined,
+    language: language || undefined,
     onboarded: true,
   });
 
@@ -43,9 +44,9 @@ router.post('/setup', asyncHandler(async (req, res) => {
 // Branding & company-level settings are Owner-only. Operational lists
 // (lifecycles, locations, specOptions) are managed by staff via /api/catalog.
 router.put('/settings', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
-  const { companyName, companyLogo, handoverTerms, defaultLocation, documentStorage, handoverTemplate } = req.body || {};
+  const { companyName, companyLogo, handoverTerms, defaultLocation, documentStorage, handoverTemplate, language } = req.body || {};
   const saved = await settingsService.saveSettings({
-    companyName, companyLogo, handoverTerms, defaultLocation, documentStorage, handoverTemplate,
+    companyName, companyLogo, handoverTerms, defaultLocation, documentStorage, handoverTemplate, language,
   });
   res.json({ success: true, data: saved });
 }));
