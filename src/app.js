@@ -89,16 +89,20 @@ function createApp() {
 
   // Public bootstrap info for the UI: branding + onboarding state (no secrets).
   app.get('/api/config', async (req, res) => {
-    // Default onboarded=false so a not-yet-set-up instance reaches the wizard;
-    // only a successful read flips it to true.
     let settings = { companyName: 'IT Asset Control Pro', companyLogo: null, onboarded: false };
     let configError = null;
+    let setupToken = null;
     try {
-      settings = await require('./providers').settingsService.getSettings();
+      const { settingsService } = require('./providers');
+      settings = await settingsService.getSettings();
+      if (!settings.onboarded) setupToken = await settingsService.ensureSetupToken();
     } catch (err) {
       configError = 'Database unavailable: ' + err.message;
     }
-    res.json({ success: true, data: { backend: config.backend, configError, ...settings } });
+    res.json({
+      success: true,
+      data: { backend: config.backend, configError, setupToken, ...settings },
+    });
   });
 
   app.use('/api', require('./routes/setup.routes'));

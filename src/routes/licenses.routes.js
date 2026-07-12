@@ -5,14 +5,21 @@ const { licenseService } = require('../services');
 
 router.use(authenticate);
 
+const privileged = (req) => licenseService.PRIVILEGED_ROLES.has(req.user.role);
+
 /** GET /api/licenses — Software & Licenses table (all roles). */
 router.get('/', asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await licenseService.listLicenses(req.query) });
+  res.json({
+    success: true,
+    data: await licenseService.listLicenses({ ...req.query, privileged: privileged(req) }),
+  });
 }));
 
 /** POST /api/licenses — register a license pool (Admin/Helpdesk). */
 router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
-  res.status(201).json({ success: true, data: await licenseService.createLicense(req.body) });
+  const lic = await licenseService.createLicense(req.body);
+  if (!privileged(req)) lic.licenseKey = licenseService.maskLicenseKey(lic.licenseKey, false);
+  res.status(201).json({ success: true, data: lic });
 }));
 
 /** POST /api/licenses/:id/seats — atomic seat claim/release; body: { delta: 1 | -1 } (Admin/Helpdesk). */

@@ -21,8 +21,8 @@ async function listEmployees({ status, search, limit = 200, offset = 0 } = {}) {
     );
   }
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
-  // Cap raised to 10000 so the full directory (and reports) load for large
-  // companies; offset supports paging when needed.
+  const totalRes = await query(`SELECT COUNT(*)::int AS n FROM employees ${whereSql}`, [...params]);
+
   params.push(Math.min(Number(limit) || 200, 10000));
   params.push(Math.max(0, Number(offset) || 0));
 
@@ -31,7 +31,25 @@ async function listEmployees({ status, search, limit = 200, offset = 0 } = {}) {
      ORDER BY full_name LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
-  return mapRows(rows);
+
+  const summaryRes = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE active_asset_count > 0)::int AS with_assets,
+       COUNT(*) FILTER (WHERE status = 'Inactive')::int AS inactive
+     FROM employees ${whereSql}`,
+    params.slice(0, params.length - 2)
+  );
+  const summary = summaryRes.rows[0];
+
+  return {
+    items: mapRows(rows),
+    total: totalRes.rows[0].n,
+    summary: {
+      withAssets: summary.with_assets,
+      inactive: summary.inactive,
+      active: totalRes.rows[0].n - summary.inactive,
+    },
+  };
 }
 
 async function getEmployee(id) {
@@ -75,11 +93,32 @@ async function updateEmployee(id, body) {
   const current = rows[0];
   if (!current) throw HttpError.notFound(`Employee ${id} not found`);
 
-  // Offboarding guard: an employee still holding assets cannot be deactivated.
+  // Offboarding guard: assets, mobile lines, or license seats block deactivation.
   if (data.status === 'Inactive' && current.active_asset_count > 0) {
     throw HttpError.conflict(
       `${current.full_name} still holds ${current.active_asset_count} asset(s). Return them before deactivating.`
     );
+  }
+  if (data.status === 'Inactive') {
+    const lineRes = await query(
+      `SELECT COUNT(*)::int AS n FROM mobile_lines WHERE current_employee_id = $1`,
+      [id]
+    ).catch(() => ({ rows: [{ n: 0 }] }));
+    if (lineRes.rows[0].n > 0) {
+      throw HttpError.conflict(
+        `${current.full_name} still has ${lineRes.rows[0].n} mobile line(s) assigned. Unassign them first.`
+      );
+    }
+    const licRes = await query(
+      `SELECT COUNT(*)::int AS n FROM license_assignments
+       WHERE employee_id = $1 AND revoked_at IS NULL`,
+      [id]
+    );
+    if (licRes.rows[0].n > 0) {
+      throw HttpError.conflict(
+        `${current.full_name} still has ${licRes.rows[0].n} software license seat(s). Revoke them first.`
+      );
+    }
   }
 
   const cols = Object.keys(data);

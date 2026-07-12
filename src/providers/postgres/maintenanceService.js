@@ -79,6 +79,14 @@ async function closeRepair(logId, { cost, resolutionNote, scrap = false } = {}, 
        restoredStatus === 'Assigned' ? prevEmployee.fullName : null]
     );
 
+    // Scrap (or return to stock) while previously assigned → free the employee slot.
+    if (log.previous_status === 'Assigned' && prevEmployee && prevEmployee.id && restoredStatus !== 'Assigned') {
+      await t.query(
+        'UPDATE employees SET active_asset_count = GREATEST(active_asset_count - 1, 0) WHERE id = $1',
+        [prevEmployee.id]
+      );
+    }
+
     await t.query(
       `INSERT INTO asset_history
          (asset_id, asset_tag, employee_id, employee_name, action_type, notes, changed_by, changed_by_name)

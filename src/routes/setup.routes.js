@@ -1,9 +1,8 @@
 /**
  * Onboarding & branding settings.
  *
- * POST /api/setup — PUBLIC but one-shot: only works while the instance has
- * not been onboarded yet. Sets company branding and the Admin credentials,
- * then flips the onboarded flag so it can never run again.
+ * POST /api/setup — PUBLIC but one-shot: requires setupToken + transactional
+ * onboarded lock. Sets company branding and Admin credentials once.
  *
  * PUT /api/settings — Admin-only branding updates afterwards.
  */
@@ -13,36 +12,34 @@ const { asyncHandler } = require('../utils/asyncHandler');
 const { authProvider, settingsService } = require('../services');
 const { HttpError } = require('../utils/httpError');
 
-router.post('/setup', asyncHandler(async (req, res) => {
+router.get('/setup/status', asyncHandler(async (req, res) => {
   const settings = await settingsService.getSettings();
   if (settings.onboarded) {
-    throw HttpError.forbidden('This instance is already set up. Sign in as Admin to change settings.');
+    return res.json({ success: true, data: { onboarded: true } });
   }
+  const setupToken = await settingsService.ensureSetupToken();
+  res.json({ success: true, data: { onboarded: false, setupToken } });
+}));
 
+router.post('/setup', asyncHandler(async (req, res) => {
   const {
-    companyName, companyLogo, adminUsername, adminEmail, adminPassword, language,
+    setupToken, companyName, companyLogo, adminUsername, adminEmail, adminPassword, language,
     handoverTemplates, defaultTemplateId,
   } = req.body || {};
-  if (!companyName) throw HttpError.badRequest('companyName is required');
 
-  const admin = await authProvider.upsertAdmin({
-    username: adminUsername,
-    email: adminEmail,
-    password: adminPassword,
-  });
-
-  const saved = await settingsService.saveSettings({
-    companyName,
-    companyLogo: companyLogo || undefined,
-    language: language || undefined,
-    handoverTemplates: handoverTemplates || undefined,
-    defaultTemplateId: defaultTemplateId || undefined,
-    onboarded: true,
-  });
+  const { settings, admin } = await settingsService.completeSetup(
+    setupToken,
+    { companyName, companyLogo, language, handoverTemplates, defaultTemplateId },
+    (client) => authProvider.upsertAdminTx(client, {
+      username: adminUsername,
+      email: adminEmail,
+      password: adminPassword,
+    })
+  );
 
   res.status(201).json({
     success: true,
-    data: { settings: saved, admin: { email: admin.email, username: admin.username } },
+    data: { settings, admin: { email: admin.email, username: admin.username } },
   });
 }));
 

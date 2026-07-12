@@ -3,9 +3,8 @@
  *
  * Runs on every server start:
  *   1. Applies schema.sql — fully idempotent (CREATE ... IF NOT EXISTS).
- *   2. Seeds the first Owner user if the users table is empty.
- *      Password comes from ADMIN_PASSWORD; if unset, a strong random one is
- *      generated and printed ONCE to the server log.
+ *   2. Runs versioned migrations tracked in schema_migrations.
+ *   3. Seeds the first Owner user if the users table is empty.
  */
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +12,9 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { pool, query } = require('./pool');
 const config = require('../../config');
+const { ensureSetupToken } = require('./settingsService');
 
+const MIGRATION_LOCK_ID = 758231004;
 let ensured = null;
 
 async function ensureDatabase() {
@@ -21,10 +22,41 @@ async function ensureDatabase() {
   return ensured;
 }
 
+async function runMigrations(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id         SERIAL PRIMARY KEY,
+      name       TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
+
+  const dir = path.join(__dirname, 'migrations');
+  if (!fs.existsSync(dir)) return;
+
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+  for (const file of files) {
+    const { rows } = await client.query('SELECT 1 FROM schema_migrations WHERE name = $1', [file]);
+    if (rows.length) continue;
+    const sql = fs.readFileSync(path.join(dir, file), 'utf8');
+    await client.query(sql);
+    await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+    console.log('[itacm] migration applied:', file);
+  }
+}
+
 async function provision() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-  await pool.query(schema);
-  await seedAdmin();
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_ID]);
+    await client.query(schema);
+    await runMigrations(client);
+    await seedAdmin();
+    await ensureSetupToken();
+  } finally {
+    await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]).catch(() => {});
+    client.release();
+  }
   console.log('[itacm] PostgreSQL schema ready');
 }
 

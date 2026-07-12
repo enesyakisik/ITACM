@@ -44,6 +44,7 @@ function renderNav() {
 
 async function navigate() {
   closeNav();
+  const gen = bumpNavGen();
   // Support query params in the hash, e.g. #/assets?lifecycle=overdue
   const [rawHash, rawQuery] = location.hash.split('?');
   const hash = ROUTES[rawHash] ? rawHash : '#/dashboard';
@@ -54,13 +55,17 @@ async function navigate() {
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === hash));
 
   const view = $('#view');
+  view.dataset.navGen = String(gen);
   if (view._viewAbort) view._viewAbort.abort(); // drop stale delegated listeners
   view.innerHTML = `<div class="table-empty">${esc(t('common.loading'))}</div>`;
   try {
     await Views[route.view](view, params);
+    if (isStaleView(view)) return;
   } catch (err) {
+    if (isStaleView(view)) return;
     view.innerHTML = `<div class="card card-pad"><div class="form-error">${esc(err.message)}</div></div>`;
   }
+  if (isStaleView(view)) return;
   renderPageTip();
 }
 
@@ -859,6 +864,7 @@ function bindOnboarding() {
     btn.disabled = true;
     try {
       const body = {
+        setupToken: AppConfig.setupToken,
         companyName: form.elements.companyName.value.trim(),
         companyLogo: obLogoDataUrl,
         adminUsername: form.elements.adminUsername.value.trim(),
@@ -900,13 +906,13 @@ async function globalSearch(qText) {
   if (!needle) return;
   const low = needle.toLowerCase();
 
-  const [assetsRes, employees, licenses] = await Promise.all([
+  const [assetsRes, empsRes, licenses] = await Promise.all([
     api(`/assets?search=${encodeURIComponent(needle)}&limit=50`).catch(() => ({ items: [] })),
-    api(`/employees?search=${encodeURIComponent(needle)}&limit=1000`).catch(() => []),
+    api(`/employees?search=${encodeURIComponent(needle)}&limit=1000`).catch(() => ({ items: [] })),
     api('/licenses').catch(() => []),
   ]);
   const assets = assetsRes.items.slice(0, 8);
-  const emps = employees.slice(0, 8);
+  const emps = employeeList(empsRes).items.slice(0, 8);
   const lics = licenses.filter((l) =>
     [l.softwareName, l.vendor, l.licenseKey].filter(Boolean).some((v) => String(v).toLowerCase().includes(low))
   ).slice(0, 5);

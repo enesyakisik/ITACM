@@ -76,3 +76,9 @@ async function logout() {
   Auth.clear();
   window.dispatchEvent(new Event('itacm:logout'));
 }
+
+/** Normalize employee list API ({ items, total } or legacy array). */
+function employeeList(data) {
+  if (Array.isArray(data)) return { items: data, total: data.length };
+  return data || { items: [], total: 0 };
+}

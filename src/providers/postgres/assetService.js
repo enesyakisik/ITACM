@@ -113,6 +113,18 @@ async function updateAsset(assetId, body) {
       throw HttpError.badRequest('Use POST /api/handovers to assign assets');
     }
 
+    const unassignStatuses = ['In Stock', 'Scrap'];
+    const clearsAssignment =
+      data.status !== undefined &&
+      unassignStatuses.includes(data.status) &&
+      current.status === 'Assigned' &&
+      current.current_employee_id;
+
+    if (clearsAssignment) {
+      data.current_employee_id = null;
+      data.current_employee_name = null;
+    }
+
     const cols = Object.keys(data);
     const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
     try {
@@ -120,6 +132,12 @@ async function updateAsset(assetId, body) {
         `UPDATE assets SET ${sets}, updated_at = now() WHERE id = $1 RETURNING *`,
         [assetId, ...cols.map((c) => data[c])]
       );
+      if (clearsAssignment) {
+        await t.query(
+          'UPDATE employees SET active_asset_count = GREATEST(active_asset_count - 1, 0) WHERE id = $1',
+          [current.current_employee_id]
+        );
+      }
       return mapAsset(updated.rows[0]);
     } catch (err) {
       if (err.code === '23505') {

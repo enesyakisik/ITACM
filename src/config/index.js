@@ -3,6 +3,7 @@
  * Self-hosted PostgreSQL + local JWT auth (see docker-compose.yml).
  */
 require('dotenv').config();
+const path = require('path');
 
 function env(name) {
   return process.env[name] || '';
@@ -37,6 +38,9 @@ const config = {
   adminEmail: trimmedEnv('ADMIN_EMAIL') || 'admin@example.com',
   adminUsername: trimmedEnv('ADMIN_USERNAME') || 'IT Admin',
   adminPassword: env('ADMIN_PASSWORD'), // generated & logged if empty
+
+  // Uploaded documents (scans, repair paperwork) — persisted outside BYTEA.
+  dataDir: trimmedEnv('DATA_DIR') || path.join(process.cwd(), 'data'),
 };
 
 function assertBackendConfig() {

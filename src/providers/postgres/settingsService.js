@@ -1,5 +1,6 @@
 /** App settings (postgres): company branding, handover terms, onboarding flag. */
-const { query } = require('./pool');
+const crypto = require('crypto');
+const { query, withTransaction } = require('./pool');
 const { HttpError } = require('../../utils/httpError');
 const {
   DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS,
@@ -133,6 +134,83 @@ function sanitizeTemplatesArray(arr) {
     return merged;
   });
   return out;
+}
+
+async function ensureSetupToken() {
+  const { rows } = await query('SELECT setup_token, onboarded FROM app_settings WHERE id = 1');
+  if (!rows[0] || rows[0].onboarded) return null;
+  if (rows[0].setup_token) return rows[0].setup_token;
+  const token = crypto.randomBytes(24).toString('hex');
+  await query('UPDATE app_settings SET setup_token = $1 WHERE id = 1', [token]);
+  return token;
+}
+
+/**
+ * Atomic first-run setup: verify one-time token, flip onboarded under row lock.
+ * `adminFn(client)` must upsert the Owner account inside the same transaction.
+ */
+async function completeSetup(setupToken, fields, adminFn) {
+  if (!setupToken || typeof setupToken !== 'string') {
+    throw HttpError.badRequest('setupToken is required');
+  }
+  const {
+    companyName, companyLogo, language, handoverTemplates, defaultTemplateId,
+  } = fields || {};
+  if (!companyName) throw HttpError.badRequest('companyName is required');
+
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      'SELECT onboarded, setup_token FROM app_settings WHERE id = 1 FOR UPDATE'
+    );
+    const row = rows[0];
+    if (!row) throw new HttpError(500, 'App settings row missing');
+    if (row.onboarded) {
+      throw HttpError.forbidden('This instance is already set up. Sign in as Admin to change settings.');
+    }
+    if (!row.setup_token || row.setup_token !== setupToken) {
+      throw HttpError.forbidden('Invalid or expired setup token — refresh the page and try again.');
+    }
+
+    const admin = await adminFn(client);
+
+    validateLogo(companyLogo);
+    let templatesToSave = null;
+    if (handoverTemplates !== undefined) {
+      templatesToSave = sanitizeTemplatesArray(handoverTemplates);
+    }
+    if (templatesToSave && defaultTemplateId) {
+      const idx = templatesToSave.findIndex((t) => t.id === String(defaultTemplateId));
+      if (idx > 0) {
+        const [tpl] = templatesToSave.splice(idx, 1);
+        templatesToSave.unshift(tpl);
+      } else if (idx < 0 && handoverTemplates !== undefined) {
+        throw HttpError.badRequest('defaultTemplateId does not match any template in handoverTemplates');
+      }
+    }
+    const defaultMirror = templatesToSave ? templatesToSave[0] : null;
+
+    await client.query(
+      `UPDATE app_settings SET
+         company_name = $1,
+         company_logo = COALESCE($2, company_logo),
+         onboarded = TRUE,
+         setup_token = NULL,
+         language = COALESCE($3, language),
+         handover_templates = COALESCE($4::jsonb, handover_templates),
+         handover_template = COALESCE($5::jsonb, handover_template)
+       WHERE id = 1`,
+      [
+        companyName,
+        companyLogo ?? null,
+        language ?? null,
+        templatesToSave ? JSON.stringify(templatesToSave) : null,
+        defaultMirror ? JSON.stringify(defaultMirror) : null,
+      ]
+    );
+
+    const settings = await getSettings();
+    return { settings, admin };
+  });
 }
 
 async function getSettings() {
@@ -295,4 +373,6 @@ module.exports = {
   resolveTemplate,
   normalizeTemplates,
   newTemplateId,
+  ensureSetupToken,
+  completeSetup,
 };

@@ -17,6 +17,34 @@ function esc(v) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** Strip dangerous markup from contenteditable print previews before innerHTML assignment. */
+function sanitizePrintHtml(html) {
+  const template = document.createElement('template');
+  template.innerHTML = String(html || '');
+  template.content.querySelectorAll('script, iframe, object, embed, link, meta, base, form').forEach((el) => el.remove());
+  const walk = (root) => {
+    [...root.querySelectorAll('*')].forEach((el) => {
+      [...el.attributes].forEach((attr) => {
+        const name = attr.name.toLowerCase();
+        const val = String(attr.value || '').trim().toLowerCase();
+        if (name.startsWith('on') || (name === 'href' && val.startsWith('javascript:'))) {
+          el.removeAttribute(attr.name);
+        }
+      });
+      walk(el);
+    });
+  };
+  walk(template.content);
+  return template.innerHTML;
+}
+
+/** Navigation generation — views skip stale rerenders after route changes. */
+let currentNavGen = 0;
+function bumpNavGen() { return ++currentNavGen; }
+function isStaleView(el) {
+  return el && el.dataset.navGen && Number(el.dataset.navGen) !== currentNavGen;
+}
+
 const STATUS_PILLS = {
   'In Stock': 'pill-emerald',
   'Assigned': 'pill-indigo',

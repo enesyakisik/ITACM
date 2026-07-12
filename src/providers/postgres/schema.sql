@@ -333,3 +333,4 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS company_address TEXT;
 
 -- Barcode/asset-label design: sizes (mm) + which fields to print
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS label_config JSONB;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS setup_token TEXT;

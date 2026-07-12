@@ -3,9 +3,9 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { documentService } = require('../services');
 
-router.use(authenticate);
+router.use(authenticate, requireRole('Owner', 'Admin', 'Helpdesk'));
 
-/** GET /api/documents/:id/download — stream an archived document (all roles). */
+/** GET /api/documents/:id/download — stream an archived document. */
 router.get('/:id/download', asyncHandler(async (req, res) => {
   const doc = await documentService.getDocument(req.params.id);
   res.setHeader('Content-Type', doc.mime || 'application/octet-stream');

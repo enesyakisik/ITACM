@@ -3,12 +3,27 @@ const { query, withTransaction } = require('./pool');
 const { mapRow, mapRows, isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
 
-async function listLicenses({ limit = 200 } = {}) {
+const PRIVILEGED_ROLES = new Set(['Owner', 'Admin']);
+
+function maskLicenseKey(key, privileged) {
+  if (privileged || !key) return key;
+  const s = String(key);
+  if (s.length <= 4) return '••••';
+  return '••••-••••-••••-' + s.slice(-4);
+}
+
+function mapLicenseRow(row, privileged) {
+  const mapped = mapRow(row);
+  if (mapped) mapped.licenseKey = maskLicenseKey(mapped.licenseKey, privileged);
+  return mapped;
+}
+
+async function listLicenses({ limit = 200, privileged = false } = {}) {
   const { rows } = await query(
     'SELECT * FROM licenses ORDER BY expiration_date ASC LIMIT $1',
     [Math.min(Number(limit) || 200, 1000)]
   );
-  return mapRows(rows);
+  return rows.map((r) => mapLicenseRow(r, privileged));
 }
 
 async function createLicense({ softwareName, vendor, licenseKey, totalSeats, expirationDate }) {
@@ -22,7 +37,7 @@ async function createLicense({ softwareName, vendor, licenseKey, totalSeats, exp
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
     [softwareName, vendor || null, licenseKey, seats, new Date(expirationDate)]
   );
-  return mapRow(rows[0]);
+  return mapLicenseRow(rows[0], true);
 }
 
 async function adjustSeats(licenseId, delta) {
@@ -136,4 +151,7 @@ async function listAssignments({ licenseId, employeeId, includeRevoked } = {}) {
   return mapRows(rows);
 }
 
-module.exports = { listLicenses, createLicense, adjustSeats, assignLicense, revokeAssignment, listAssignments };
+module.exports = {
+  listLicenses, createLicense, adjustSeats, assignLicense, revokeAssignment, listAssignments,
+  maskLicenseKey, PRIVILEGED_ROLES,
+};

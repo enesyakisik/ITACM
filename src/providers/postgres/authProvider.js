@@ -102,13 +102,18 @@ async function createItUser({ username, email, password, role }) {
 
 /** Onboarding: create the Owner account, or reset the seeded one's credentials. */
 async function upsertAdmin({ username, email, password }) {
+  return upsertAdminTx(null, { username, email, password });
+}
+
+async function upsertAdminTx(client, { username, email, password }) {
   if (!username || !email || !password) {
     throw HttpError.badRequest('username, email and password are required');
   }
   if (password.length < 8) throw HttpError.badRequest('Password must be at least 8 characters');
 
   const hash = await bcrypt.hash(password, 12);
-  const { rows } = await query(
+  const q = client ? client.query.bind(client) : query;
+  const { rows } = await q(
     `INSERT INTO users (username, email, password_hash, role)
      VALUES ($1, $2, $3, 'Owner')
      ON CONFLICT (email) DO UPDATE
@@ -116,7 +121,7 @@ async function upsertAdmin({ username, email, password }) {
      RETURNING id, username, email, role`,
     [username, email.toLowerCase(), hash]
   );
-  return { uid: rows[0].id, username: rows[0].username, email: rows[0].email, role: 'Owner' };
+  return { uid: rows[0].id, username: rows[0].username, email: rows[0].email, role: rows[0].role };
 }
 
 async function setUserRole(uid, role, actor) {
@@ -201,6 +206,6 @@ async function getAdminLogs(email, limit = 25) {
 
 module.exports = {
   login, verifyToken, recordLogin, getLoginLogs,
-  createItUser, upsertAdmin, setUserRole, getVerifiedProfile, listUsers,
+  createItUser, upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
   setUserStatus, deleteUser, getAdminLogs,
 };

@@ -51,6 +51,10 @@ async function main() {
     await ensureDatabaseWithRetry(providers);
   }
 
+  const fs = require('fs');
+  const { dataRoot } = require('./src/utils/docStorage');
+  fs.mkdirSync(dataRoot(), { recursive: true });
+
   const { createApp } = require('./src/app');
   createApp().listen(config.port, () => {
     console.log(`[itacm] backend=${config.backend} listening on http://localhost:${config.port}`);
