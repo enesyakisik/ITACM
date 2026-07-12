@@ -30,8 +30,8 @@
 | Ayarlar/Onboarding | `showSettings`, `showTemplateCustomizer` (app.js), `#ob-*` | setup.routes.js | settingsService | app_settings |
 | Belgeler (indirme) | `downloadAuthed`, `viewAuthed` | documents.routes.js + maintenance.routes.js | documentService | handover_documents, maintenance_documents |
 | Stok Sayımı | `Views.stockcount` | counts.routes.js | countService | stock_counts, stock_count_scans |
-
-## Kritik paylaşılan yardımcılar
+| Mobil Hatlar | `Views.lines`, `showEmployeeDetail` | lines.routes.js | lineService | mobile_lines |
+| Raporlar | `Views.reports`, `REPORT_BUILDERS`, `CUSTOM_SOURCES` | (mevcut endpointleri okur) | — | — |
 - `public/js/ui.js`: `$`, `esc` (XSS!), `openModal/formModal/confirmModal`, `bindView`, `toast`, `badge`
 - `public/js/api.js`: `api()` (Bearer ekler), `Auth`, `AppConfig` (= GET /api/config; app_settings'in kamuya açık kısmı — yeni ayar eklersen otomatik gelir)
 - `public/js/barcode.js`: `code128SVG` — bağımlılıksız Code128-B

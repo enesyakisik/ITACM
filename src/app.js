@@ -33,7 +33,8 @@ function createApp() {
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
-      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      // camera=(self) — stock-count barcode scanning on phones needs getUserMedia.
+      'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
     });
     next();
   });

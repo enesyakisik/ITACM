@@ -81,14 +81,15 @@ function toast(message, type = 'info') {
 }
 
 /* ---- modals ---- */
-function openModal({ title, body, foot, wide, onMount }) {
+function openModal({ title, body, foot, wide, xwide, onMount, onClose }) {
   closeModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
+  const sizeClass = xwide ? ' modal-xl' : (wide ? ' modal-lg' : '');
   // body/foot are templates built by callers; all dynamic values inside them
   // are esc()-encoded at the call site.
   overlay.innerHTML = `
-    <div class="modal${wide ? ' modal-lg' : ''}">
+    <div class="modal${sizeClass}">
       <div class="modal-head">
         <h3>${esc(title)}</h3>
         <button class="modal-close" data-close>×</button>
@@ -96,6 +97,7 @@ function openModal({ title, body, foot, wide, onMount }) {
       <div class="modal-body">${body}</div>
       ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
     </div>`;
+  if (typeof onClose === 'function') overlay._onCloseCleanup = onClose;
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay || e.target.hasAttribute('data-close')) closeModal();
   });
@@ -103,14 +105,24 @@ function openModal({ title, body, foot, wide, onMount }) {
   if (onMount) onMount(overlay);
   return overlay;
 }
-function closeModal() { $('#modal-root').innerHTML = ''; }
+function closeModal() {
+  const root = $('#modal-root');
+  const open = root && root.firstElementChild;
+  if (open && typeof open._onCloseCleanup === 'function') {
+    const fn = open._onCloseCleanup;
+    open._onCloseCleanup = null;
+    try { fn(); } catch { /* ignore */ }
+  }
+  if (root) root.innerHTML = '';
+}
 
 /*
  * Declarative form modal.
  * fields: [{ name, label, type: text|number|email|password|date|select|textarea,
  *            options: [{value,label}], required, value, placeholder, full }]
  */
-function formModal({ title, fields, submitLabel = 'Save', wide, onSubmit }) {
+function formModal({ title, fields, submitLabel, wide, onSubmit }) {
+  const saveLbl = t(submitLabel || 'Save');
   const inputs = fields.map((f) => {
     const val = f.value != null ? esc(f.value) : '';
     let control;
@@ -128,15 +140,15 @@ function formModal({ title, fields, submitLabel = 'Save', wide, onSubmit }) {
       control = `<input type="${f.type || 'text'}" name="${esc(f.name)}" value="${val}"
         placeholder="${esc(f.placeholder || '')}" ${f.required ? 'required' : ''} ${f.step ? `step="${f.step}"` : ''}>`;
     }
-    return `<div class="form-field ${f.full ? 'full' : ''}"><label>${esc(f.label)}</label>${control}</div>`;
+    return `<div class="form-field ${f.full ? 'full' : ''}"><label>${esc(t(f.label))}</label>${control}</div>`;
   }).join('');
 
   openModal({
-    title,
+    title: t(title),
     wide,
     body: `<form id="modal-form"><div class="form-grid">${inputs}</div><div id="modal-form-error"></div></form>`,
-    foot: `<button class="btn btn-outline" data-close>Cancel</button>
-           <button class="btn btn-primary" type="submit" form="modal-form">${esc(submitLabel)}</button>`,
+    foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+           <button class="btn btn-primary" type="submit" form="modal-form">${esc(saveLbl)}</button>`,
     onMount(overlay) {
       const form = $('#modal-form', overlay);
       form.addEventListener('submit', async (e) => {
@@ -169,10 +181,10 @@ function formModal({ title, fields, submitLabel = 'Save', wide, onSubmit }) {
 
 function confirmModal(message, onYes) {
   openModal({
-    title: 'Confirm',
+    title: t('common.confirm'),
     body: `<p style="margin:0">${esc(message)}</p>`,
-    foot: `<button class="btn btn-outline" data-close>Cancel</button>
-           <button class="btn btn-danger" id="confirm-yes">Confirm</button>`,
+    foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+           <button class="btn btn-danger" id="confirm-yes">${esc(t('common.confirm'))}</button>`,
     onMount(overlay) {
       $('#confirm-yes', overlay).addEventListener('click', async () => {
         try { await onYes(); closeModal(); }

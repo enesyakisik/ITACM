@@ -11,7 +11,7 @@ const Views = {};
 
 function pageHead(title, sub, actionsHtml = '') {
   return `<div class="page-head">
-    <div><h2>${esc(title)}</h2><div class="sub">${esc(sub)}</div></div>
+    <div><h2>${esc(t(title))}</h2><div class="sub">${esc(t(sub))}</div></div>
     <div class="actions">${actionsHtml}</div>
   </div>`;
 }
@@ -72,7 +72,8 @@ function assetLabelHTML(a, opts = LABEL_DEFAULTS) {
 
 /**
  * Ask for label dimensions (remembered per browser), then print one label per
- * asset — in asset-tag order — with the chosen size and copy count.
+ * asset — each asset on its own page (bulk = sequential pages), with the
+ * chosen size and copy count.
  */
 function printAssetLabels(assets) {
   const list = (assets || []).filter(Boolean)
@@ -94,8 +95,12 @@ function printAssetLabels(assets) {
         copies: Math.min(20, Math.max(1, Math.round(Number(d.copies) || 1))),
       };
       localStorage.setItem('itacm:labelOpts', JSON.stringify(opts));
-      const labels = list.flatMap((a) => Array.from({ length: opts.copies }, () => assetLabelHTML(a, opts)));
-      $('#print-root').innerHTML = `<div class="label-sheet">${labels.join('')}</div>`;
+      // One page per asset so bulk print feeds labels one-by-one on label printers.
+      const pages = list.map((a) => {
+        const copies = Array.from({ length: opts.copies }, () => assetLabelHTML(a, opts));
+        return `<div class="label-page">${copies.join('')}</div>`;
+      });
+      $('#print-root').innerHTML = pages.join('');
       window.print();
     },
   });
@@ -1119,13 +1124,14 @@ async function showEmployeeDetail(emp) {
   if (!emp) return;
   const canEdit = Auth.can('canManageAssets');
   const canDelDoc = Auth.can('canManageUsers');
-  const [assetsRes, receipts, allSoftware, history, documents] = await Promise.all([
+  const [assetsRes, receipts, allSoftware, history, documents, lines] = await Promise.all([
     api(`/assets?employeeId=${encodeURIComponent(emp.id)}&status=Assigned&limit=500`),
     api(`/handovers?employeeId=${encodeURIComponent(emp.id)}&limit=20`),
     // includeRevoked so past software zimmet also shows in the history timeline.
     api(`/licenses/assignments?employeeId=${encodeURIComponent(emp.id)}&includeRevoked=true`),
     api(`/employees/${encodeURIComponent(emp.id)}/history?limit=50`).catch(() => []),
     api(`/employees/${encodeURIComponent(emp.id)}/documents`).catch(() => []),
+    api(`/lines?employeeId=${encodeURIComponent(emp.id)}`).catch(() => []),
   ]);
   const assets = assetsRes.items;
   const software = allSoftware.filter((s) => !s.revokedAt); // active only, for the overview
@@ -1156,14 +1162,14 @@ async function showEmployeeDetail(emp) {
       </div>
 
       <div class="tabs">
-        <button class="tab active" data-tab="overview">Overview</button>
-        <button class="tab" data-tab="history">Activity History (${timeline.length})</button>
-        <button class="tab" data-tab="documents">Documents (${documents.length})</button>
+        <button class="tab active" data-tab="overview">${esc(t('common.overview'))}</button>
+        <button class="tab" data-tab="history">${esc(t('common.history'))} (${timeline.length})</button>
+        <button class="tab" data-tab="documents">${esc(t('common.documents'))} (${documents.length})</button>
       </div>
       <div id="tab-overview">
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
-        Assigned Assets (${assets.length})</h3>
-      ${assets.length === 0 ? '<div class="cell-sub" style="margin-bottom:16px">No assets currently assigned.</div>' : `
+        ${esc(t('emp.assignedAssets'))} (${assets.length})</h3>
+      ${assets.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noAssets'))}</div>` : `
       <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
         <table class="data">
           <thead><tr><th>Asset Tag</th><th>Brand &amp; Model</th><th>Serial No</th><th>Category</th>${canEdit ? '<th style="text-align:right"></th>' : ''}</tr></thead>
@@ -1186,10 +1192,10 @@ async function showEmployeeDetail(emp) {
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
         <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0">
-          Assigned Software (${software.length})</h3>
-        ${canEdit ? '<button class="btn btn-outline btn-sm" id="emp-assign-sw"><span class="ms">add</span> Assign Software</button>' : ''}
+          ${esc(t('emp.assignedSoftware'))} (${software.length})</h3>
+        ${canEdit ? `<button class="btn btn-outline btn-sm" id="emp-assign-sw"><span class="ms">add</span> ${esc(t('emp.assignSoftware'))}</button>` : ''}
       </div>
-      ${software.length === 0 ? '<div class="cell-sub" style="margin-bottom:16px">No software assigned.</div>' : `
+      ${software.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noSoftware'))}</div>` : `
       <div style="margin-bottom:18px">
         ${software.map((s) => `
         <div class="history-item" style="justify-content:space-between">
@@ -1200,8 +1206,32 @@ async function showEmployeeDetail(emp) {
         </div>`).join('')}
       </div>`}
 
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
+        <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0">
+          ${esc(t('emp.mobileLines'))} (${lines.length})</h3>
+        ${canEdit ? `<button class="btn btn-outline btn-sm" id="emp-assign-line"><span class="ms">add</span> ${esc(t('emp.assignLine'))}</button>` : ''}
+      </div>
+      ${lines.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noLines'))}</div>` : `
+      <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
+        <table class="data">
+          <thead><tr><th>${esc(t('lines.phone'))}</th><th>${esc(t('lines.operator'))}</th><th>${esc(t('lines.plan'))}</th><th>${esc(t('lines.sim'))}</th>${canEdit ? '<th style="text-align:right"></th>' : ''}</tr></thead>
+          <tbody>
+            ${lines.map((l) => `
+            <tr>
+              <td class="mono cell-title">${esc(l.phoneNumber)}</td>
+              <td>${esc(l.operator || '—')}</td>
+              <td class="cell-sub">${esc(l.plan || '—')}</td>
+              <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
+              ${canEdit ? `<td class="actions">
+                <button class="btn btn-outline btn-sm" data-return-line="${esc(l.id)}">
+                  <span class="ms">undo</span> ${esc(t('emp.unassign'))}</button></td>` : ''}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`}
+
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
-        Handover Receipts (${receipts.length})</h3>
+        ${esc(t('emp.handoverReceipts'))} (${receipts.length})</h3>
       ${receipts.length === 0 ? '<div class="cell-sub">No handover receipts yet.</div>' :
         receipts.map((h) => `
         <div class="history-item" style="justify-content:space-between">
@@ -1353,6 +1383,39 @@ async function showEmployeeDetail(emp) {
           toast(`${r.softwareName} revoked from ${r.employeeName}`, 'success');
           showEmployeeDetail(emp);
         } catch (err) { toast(err.message, 'error'); }
+      }));
+
+      // Mobile line zimmet: assign a free Active line to this employee.
+      const lineBtn = $('#emp-assign-line', overlay);
+      if (lineBtn) lineBtn.addEventListener('click', async () => {
+        const free = (await api('/lines?status=Active')).filter((l) => !l.currentEmployeeId);
+        formModal({
+          title: `Assign mobile line to ${emp.fullName}`,
+          fields: [{
+            name: 'lineId', label: 'Mobile line *', type: 'select', required: true, full: true,
+            options: [{ value: '', label: free.length ? 'Select a line…' : 'No unassigned Active lines' },
+              ...free.map((l) => ({
+                value: l.id,
+                label: `${l.phoneNumber}${l.operator ? ' · ' + l.operator : ''}${l.plan ? ' · ' + l.plan : ''}`,
+              }))],
+          }],
+          submitLabel: 'Assign line',
+          async onSubmit(d) {
+            if (!d.lineId) throw new Error('Select a line');
+            const r = await api(`/lines/${d.lineId}/assign`, { method: 'POST', body: { employeeId: emp.id } });
+            toast(`${r.phoneNumber} assigned to ${r.currentEmployeeName}`, 'success');
+            showEmployeeDetail(emp);
+          },
+        });
+      });
+
+      overlay.querySelectorAll('[data-return-line]').forEach((b) => b.addEventListener('click', () => {
+        const line = lines.find((x) => x.id === b.dataset.returnLine);
+        confirmModal(`Unassign ${line ? line.phoneNumber : 'this line'} from ${emp.fullName}?`, async () => {
+          await api(`/lines/${b.dataset.returnLine}/unassign`, { method: 'POST' });
+          toast('Mobile line returned', 'success');
+          showEmployeeDetail(emp);
+        });
       }));
 
       // Return (zimmet düşürme): take an asset off this employee, back to stock.
@@ -2542,17 +2605,37 @@ async function downloadAuthed(url) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
-/** Open a protected document IN the browser (new tab) instead of downloading —
- *  PDFs and images render inline from a blob URL, token stays in the header. */
-async function viewAuthed(url) {
+/** Open a protected document in an in-app popup (not a new browser tab).
+ *  PDFs/images render inline from a blob URL; the Bearer token stays in fetch. */
+async function viewAuthed(url, title) {
   try {
     const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + Auth.token } });
     if (!resp.ok) throw new Error('Could not open the document');
     const blob = await resp.blob();
+    const mime = (blob.type || resp.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
     const objUrl = URL.createObjectURL(blob);
-    const win = window.open(objUrl, '_blank');
-    if (!win) toast('Pop-up blocked — allow pop-ups to view documents', 'error');
-    setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+    const filename = (resp.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/)?.[1]
+      || title || 'Document';
+    const isImg = /^image\//.test(mime);
+    const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(filename);
+    let body;
+    if (isImg) {
+      body = `<img class="doc-viewer-img" src="${objUrl}" alt="${esc(filename)}">`;
+    } else if (isPdf) {
+      body = `<iframe class="doc-viewer" src="${objUrl}" title="${esc(filename)}"></iframe>`;
+    } else {
+      body = `<div class="table-empty">${esc(t('doc.previewUnavailable'))}</div>`;
+    }
+    openModal({
+      title: filename,
+      xwide: true,
+      body,
+      foot: `
+        <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
+        <a class="btn btn-primary" href="${objUrl}" download="${esc(filename)}">
+          <span class="ms">download</span> ${esc(t('common.download'))}</a>`,
+      onClose() { URL.revokeObjectURL(objUrl); },
+    });
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -3464,45 +3547,107 @@ Views.reports = async function (el) {
 /*
  * Physical inventory flow: open a session, scan asset barcodes/QRs (handheld
  * scanner types into the box; the camera button uses BarcodeDetector where the
- * browser supports it), then close to compare scans against the inventory.
- * Sessions live on the server, so a count started on the PC can be continued
- * from a phone signed in to the same app.
+ * browser supports it, otherwise ZXing), then close to compare scans against
+ * the inventory. Sessions live on the server, so a count started on the PC can
+ * be continued from a phone signed in to the same app.
  */
+function loadZXing() {
+  if (window.ZXing) return Promise.resolve(window.ZXing);
+  if (loadZXing._p) return loadZXing._p;
+  loadZXing._p = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/js/vendor/zxing.min.js';
+    s.async = true;
+    s.onload = () => (window.ZXing ? resolve(window.ZXing) : reject(new Error('ZXing failed to load')));
+    s.onerror = () => reject(new Error('Could not load barcode scanner library'));
+    document.head.appendChild(s);
+  });
+  return loadZXing._p;
+}
+
 async function scanWithCamera(onCode) {
-  if (!('BarcodeDetector' in window)) {
-    return toast('Camera scanning is not supported in this browser — use a handheld scanner or type the tag', 'error');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return toast('Camera is not available in this browser — type the asset tag or serial number instead', 'error');
   }
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-  } catch {
-    return toast('Camera access denied (note: the camera needs HTTPS or localhost)', 'error');
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+  } catch (err) {
+    const name = (err && err.name) || '';
+    const tip = name === 'NotAllowedError'
+      ? 'Camera permission denied — allow camera access for this site'
+      : name === 'NotFoundError'
+        ? 'No camera found on this device'
+        : 'Camera access failed (HTTPS or localhost required on most phones)';
+    return toast(tip, 'error');
   }
-  const detector = new BarcodeDetector({ formats: ['qr_code', 'code_128'] });
-  let last = ''; let lastAt = 0; let timer = null;
-  const stop = () => { clearInterval(timer); stream.getTracks().forEach((t) => t.stop()); closeModal(); };
+
+  let last = ''; let lastAt = 0; let timer = null; let zxControls = null;
+  const accept = (v) => {
+    if (!v) return;
+    const code = String(v).trim();
+    if (!code) return;
+    if (code === last && Date.now() - lastAt < 2500) return;
+    last = code; lastAt = Date.now();
+    const hint = document.getElementById('scan-last');
+    if (hint) hint.textContent = code;
+    onCode(code);
+  };
+  const stop = () => {
+    clearInterval(timer);
+    try { if (zxControls && zxControls.stop) zxControls.stop(); } catch { /* ignore */ }
+    stream.getTracks().forEach((t) => t.stop());
+    closeModal();
+  };
+
   openModal({
-    title: 'Scan with camera',
+    title: t('stock.scanCameraTitle'),
     body: `
-      <video id="scan-video" autoplay playsinline style="width:100%;border-radius:12px;background:#000"></video>
-      <div class="cell-sub" style="margin-top:8px;text-align:center">Point at the asset's barcode or QR — scans register automatically.</div>
+      <video id="scan-video" autoplay muted playsinline style="width:100%;border-radius:12px;background:#000;max-height:60vh;object-fit:cover"></video>
+      <div class="cell-sub" style="margin-top:8px;text-align:center">${esc(t('stock.tipPhone'))}</div>
       <div id="scan-last" style="text-align:center;margin-top:6px;font-weight:700"></div>`,
-    foot: '<button class="btn btn-primary" id="scan-stop">Stop scanning</button>',
-    onMount(overlay) {
+    foot: `<button class="btn btn-primary" id="scan-stop">${esc(t('stock.stopScanning'))}</button>`,
+    onClose() {
+      clearInterval(timer);
+      try { if (zxControls && zxControls.stop) zxControls.stop(); } catch { /* ignore */ }
+      stream.getTracks().forEach((t) => t.stop());
+    },
+    async onMount(overlay) {
       const video = $('#scan-video', overlay);
+      video.setAttribute('playsinline', 'true');
+      video.muted = true;
       video.srcObject = stream;
+      try { await video.play(); } catch { /* autoplay policies — playsinline usually enough */ }
       $('#scan-stop', overlay).addEventListener('click', stop);
-      timer = setInterval(async () => {
+
+      if ('BarcodeDetector' in window) {
         try {
-          const codes = await detector.detect(video);
-          const v = codes[0] && codes[0].rawValue;
-          if (v && (v !== last || Date.now() - lastAt > 2500)) {
-            last = v; lastAt = Date.now();
-            $('#scan-last', overlay).textContent = v;
-            onCode(v);
-          }
-        } catch { /* frame not ready */ }
-      }, 350);
+          const detector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
+          timer = setInterval(async () => {
+            try {
+              if (video.readyState < 2) return;
+              const codes = await detector.detect(video);
+              if (codes[0] && codes[0].rawValue) accept(codes[0].rawValue);
+            } catch { /* frame not ready */ }
+          }, 350);
+          return;
+        } catch { /* fall through to ZXing */ }
+      }
+
+      // Safari / Firefox / older mobile browsers: ZXing fallback.
+      try {
+        const ZX = await loadZXing();
+        const reader = new ZX.BrowserMultiFormatReader();
+        zxControls = await reader.decodeFromStream(stream, video, (result) => {
+          if (result) accept(result.getText());
+        });
+      } catch (err) {
+        toast((err && err.message) || 'Camera scanner failed — type the tag or serial instead', 'error');
+        stop();
+      }
     },
   });
 }
@@ -3514,9 +3659,9 @@ Views.stockcount = async function (el, params = {}) {
 
   el.innerHTML = `
     ${pageHead('Stock Count', 'Physical inventory: scan devices and reconcile against the system.', canDo
-      ? '<button class="btn btn-primary" id="sc-new"><span class="ms">add</span> Start New Count</button>' : '')}
+      ? `<button class="btn btn-primary" id="sc-new"><span class="ms">add</span> ${esc(t('stock.startNew'))}</button>` : '')}
     <div id="sc-active"></div>
-    <div class="gs-section" style="margin:20px 0 8px">Count Sessions</div>
+    <div class="gs-section" style="margin:20px 0 8px">${esc(t('stock.sessions'))}</div>
     <div class="card"><div class="table-wrap"><table class="data">
       <thead><tr><th>Session</th><th>Location</th><th>Status</th><th>Scans</th><th>Started</th><th style="text-align:right"></th></tr></thead>
       <tbody>
@@ -3558,14 +3703,14 @@ Views.stockcount = async function (el, params = {}) {
             <div class="seat-bar" style="margin-top:8px;max-width:340px"><i style="width:${pct}%"></i></div>
           </div>
           ${canDo ? `
-          <button class="btn btn-outline" id="sc-camera"><span class="ms">photo_camera</span> Camera</button>
-          <button class="btn btn-danger" id="sc-close"><span class="ms">task_alt</span> Close &amp; Compare</button>` : ''}
+          <button class="btn btn-outline" id="sc-camera"><span class="ms">photo_camera</span> ${esc(t('stock.cameraBtn'))}</button>
+          <button class="btn btn-danger" id="sc-close"><span class="ms">task_alt</span> ${esc(t('stock.closeCompare'))}</button>` : ''}
         </div>
         ${canDo ? `
         <div class="search-box" style="margin-top:14px;max-width:420px"><span class="ms">qr_code_scanner</span>
-          <input id="sc-input" placeholder="Scan barcode / QR or type the asset tag, then Enter…" autocomplete="off">
+          <input id="sc-input" placeholder="${esc(t('stock.scanPlaceholder'))}" autocomplete="off">
         </div>
-        <div class="cell-sub" style="margin-top:6px">Tip: open this page on your phone (same address, same login) to keep scanning on the move — progress is shared live.</div>` : ''}
+        <div class="cell-sub" style="margin-top:6px">${esc(t('stock.tipPhone'))}</div>` : ''}
         <div id="sc-recent" style="margin-top:10px">
           ${c.scans.slice(0, 8).map((s) => `
           <div class="history-item">
@@ -3754,7 +3899,7 @@ Views.lines = async function (el, params = {}) {
       <div class="table-wrap"><table class="data">
         <thead><tr><th>Number</th><th>Operator / Plan</th><th>SIM Serial</th><th>Monthly</th><th>Status</th><th>Assigned To</th><th style="text-align:right"></th></tr></thead>
         <tbody>
-          ${items.length === 0 ? '<tr><td colspan="7" class="table-empty">No mobile lines yet.</td></tr>' :
+          ${items.length === 0 ? `<tr><td colspan="7" class="table-empty">${esc(t('lines.noLinesYet'))}</td></tr>` :
             items.map((l) => `
             <tr>
               <td class="mono cell-title">${esc(l.phoneNumber)}</td>

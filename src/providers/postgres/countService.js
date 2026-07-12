@@ -74,8 +74,13 @@ async function scanTag(countId, raw, itUser) {
     if (!c.rows[0]) throw HttpError.notFound('Count not found');
     if (c.rows[0].status !== 'open') throw HttpError.conflict('This count is closed');
 
+    // Match by asset tag OR serial number (trimmed, case-insensitive), so typing
+    // either during a manual count — or scanning a serial barcode — finds the device.
     const a = await t.query(
-      'SELECT id, asset_tag, brand, model, category, status, current_employee_name FROM assets WHERE UPPER(asset_tag) = $1',
+      `SELECT id, asset_tag, brand, model, category, status, current_employee_name
+       FROM assets
+       WHERE UPPER(TRIM(asset_tag)) = $1
+          OR UPPER(TRIM(serial_number)) = $1`,
       [tag]
     );
     const asset = a.rows[0] || null;

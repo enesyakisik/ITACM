@@ -43,7 +43,7 @@ async function navigate() {
 
   const view = $('#view');
   if (view._viewAbort) view._viewAbort.abort(); // drop stale delegated listeners
-  view.innerHTML = '<div class="table-empty">Loading…</div>';
+  view.innerHTML = `<div class="table-empty">${esc(t('common.loading'))}</div>`;
   try {
     await Views[route.view](view, params);
   } catch (err) {
