@@ -102,9 +102,10 @@ async function executeHandover({ employeeId, documentType = 'single', items }, i
     );
 
     const handoverRes = await t.query(
-      `INSERT INTO handovers (employee_id, employee_name, it_user_id, document_type, items)
-       VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
-      [employee.id, employee.full_name, itUser.uid, documentType, JSON.stringify(receiptItems)]
+      `INSERT INTO handovers (employee_id, employee_name, it_user_id, it_user_name, document_type, items)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id`,
+      [employee.id, employee.full_name, itUser.uid, itUser.username || itUser.email || null,
+       documentType, JSON.stringify(receiptItems)]
     );
 
     return {
@@ -119,7 +120,15 @@ async function executeHandover({ employeeId, documentType = 'single', items }, i
 
 async function getHandover(handoverId) {
   if (!isUuid(handoverId)) throw HttpError.notFound(`Handover ${handoverId} not found`);
-  const { rows } = await query('SELECT * FROM handovers WHERE id = $1', [handoverId]);
+  // Join the assigner's account so reprints can show the ORIGINAL name — and
+  // only fall back to the current user when that account is disabled/deleted.
+  const { rows } = await query(
+    `SELECT h.*, (u.id IS NOT NULL AND u.status = 'Active') AS it_user_active
+     FROM handovers h
+     LEFT JOIN users u ON u.id::text = h.it_user_id
+     WHERE h.id = $1`,
+    [handoverId]
+  );
   if (!rows[0]) throw HttpError.notFound(`Handover ${handoverId} not found`);
   return mapRow(rows[0]);
 }

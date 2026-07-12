@@ -27,8 +27,11 @@ const catIcon = (c) => CATEGORY_ICONS[c] || 'devices_other';
 /** Lifecycle: centrally-managed months per category, applied to every asset. */
 function lifecycleInfo(x) {
   const lc = AppConfig.lifecycles || {};
-  // Per-asset override wins over the category default.
-  const months = x.lifecycleMonths || lc[x.category] || lc.Other || 48;
+  // Per-asset override wins over the category default; a category set to 0 in
+  // the Product Catalog is excluded from EOL tracking.
+  const catMonths = lc[x.category] != null ? lc[x.category] : (lc.Other || 48);
+  const months = x.lifecycleMonths || catMonths;
+  if (!months) return { months: 0, eol: null, pct: null, overdue: false, excluded: true };
   if (!x.purchaseDate) return { months, eol: null, pct: null, overdue: false };
   const start = new Date(x.purchaseDate._seconds ? x.purchaseDate._seconds * 1000 : x.purchaseDate);
   const eol = new Date(start);
@@ -38,6 +41,7 @@ function lifecycleInfo(x) {
 }
 function lifecycleLabel(x) {
   const l = lifecycleInfo(x);
+  if (l.excluded) return 'EOL tracking off for this category';
   if (!l.eol) return `${l.months} months (no purchase date)`;
   return l.overdue
     ? `${l.months} months — EOL ${fmtDate(l.eol)} • OVERDUE, replacement due`
@@ -960,9 +964,10 @@ async function showAssetDetail(id, onChange) {
     onMount(overlay) {
       $('#ad-qr', overlay).addEventListener('click', () => showQrModal(x));
       $('#ad-label', overlay).addEventListener('click', () => printAssetLabels([x]));
+      // Attached repair paperwork: click → view inline in a new tab.
       overlay.querySelectorAll('[data-mdoc-dl]').forEach((a) => a.addEventListener('click', (e) => {
         e.preventDefault();
-        downloadAuthed(`/api/maintenance/documents/${a.dataset.mdocDl}/download`);
+        viewAuthed(`/api/maintenance/documents/${a.dataset.mdocDl}/download`);
       }));
       const adHo = $('#ad-handover', overlay);
       if (adHo) adHo.addEventListener('click', () => { closeModal(); location.hash = '#/handover'; });
@@ -1234,7 +1239,7 @@ async function showEmployeeDetail(emp) {
             <tr>
               <td><div style="display:flex;align-items:center;gap:8px">
                 <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
-                <span class="cell-title">${esc(d.filename)}</span></div></td>
+                <a href="#" class="cell-title doc-link" data-doc-view="${esc(d.id)}" title="Click to view">${esc(d.filename)}</a></div></td>
               <td>${d.kind === 'scan' ? '<span class="pill pill-emerald">Signed scan</span>' : '<span class="pill pill-indigo">Generated</span>'}</td>
               <td class="cell-sub">${fmtKB(d.byteSize || 0)}</td>
               <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' • ' + esc(d.uploadedByName) : ''}</td>
@@ -1257,6 +1262,12 @@ async function showEmployeeDetail(emp) {
         $('#tab-overview', overlay).classList.toggle('hidden', tb.dataset.tab !== 'overview');
         $('#tab-history', overlay).classList.toggle('hidden', tb.dataset.tab !== 'history');
         $('#tab-documents', overlay).classList.toggle('hidden', tb.dataset.tab !== 'documents');
+      }));
+
+      // Click the filename → open the document in a new tab (inline view).
+      overlay.querySelectorAll('[data-doc-view]').forEach((a) => a.addEventListener('click', (e) => {
+        e.preventDefault();
+        viewAuthed(`/api/documents/${a.dataset.docView}/download`);
       }));
 
       // Authenticated document download (Bearer token can't ride on a plain <a>).
@@ -1396,7 +1407,12 @@ function employeeForm(emp, done) {
     fields: [
       { name: 'fullName', label: 'Full name *', required: true, value: emp?.fullName },
       { name: 'email', label: 'Email *', type: 'email', required: true, value: emp?.email },
-      { name: 'department', label: 'Department', value: emp?.department },
+      // Departments are managed centrally in Product Catalog; keep an unknown
+      // legacy value selectable so editing an old employee doesn't lose it.
+      { name: 'department', label: 'Department', type: 'select', value: emp?.department || '',
+        options: [{ value: '', label: '— No department —' },
+          ...(emp?.department && !(AppConfig.departments || []).includes(emp.department) ? [emp.department] : []),
+          ...(AppConfig.departments || [])] },
       { name: 'title', label: 'Title', value: emp?.title },
       { name: 'status', label: 'Status', type: 'select', value: emp?.status || 'Active', options: ['Active', 'Inactive'] },
     ],
@@ -1828,7 +1844,11 @@ async function printHandover(h) {
     employeeName: h.employeeName,
     employeeId: emp ? String(emp.id).slice(0, 8).toUpperCase() : '',
     department: emp && emp.department, title: emp && emp.title,
-    deliveredByName: (Auth.profile && Auth.profile.username) || 'IT Department',
+    // Original assigner stays on reprints; current user only if that account
+    // is disabled/deleted (or for pre-migration receipts with no stored name).
+    deliveredByName: (h.itUserName && h.itUserActive !== false)
+      ? h.itUserName
+      : ((Auth.profile && Auth.profile.username) || h.itUserName || 'IT Department'),
     termsHtml, items: group,
   }, tpl)).join('');
 
@@ -2158,23 +2178,28 @@ Views.users = async function (el) {
     ${pageHead('IT Users', 'Manage system operators and their roles.',
       `<button class="btn btn-primary" id="user-new"><span class="ms">person_add</span> New IT User</button>`)}
     <div class="card"><div class="table-wrap"><table class="data">
-      <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Last Login</th><th>Created</th><th style="text-align:right"></th></tr></thead>
+      <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Created</th><th style="text-align:right"></th></tr></thead>
       <tbody>
         ${items.map((u) => `
-        <tr>
+        <tr style="${u.status === 'Disabled' ? 'opacity:.55' : ''}">
           <td><div style="display:flex;align-items:center;gap:12px">
             <span class="avatar">${esc(initials(u.username))}</span>
             <span class="cell-title">${esc(u.username)}</span></div></td>
           <td>${esc(u.email)}</td>
           <td>${badge(u.role)}</td>
+          <td>${u.status === 'Disabled' ? '<span class="pill pill-rose">Disabled</span>' : '<span class="pill pill-emerald">Active</span>'}</td>
           <td>${u.lastLoginAt ? fmtDateTime(u.lastLoginAt) : '<span class="cell-sub">Never</span>'}</td>
           <td>${fmtDate(u.createdAt)}</td>
           <td class="actions">
-            <button class="btn btn-outline btn-sm" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}">
+            <button class="btn btn-outline btn-sm" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}" data-uemail="${esc(u.email)}">
               <span class="ms">history</span> Logins</button>
             <select data-role="${esc(u.uid)}" style="width:auto" ${(u.role === 'Owner' && !Auth.can('canManageOwner')) ? 'disabled title="Only an Owner can change an Owner"' : ''}>
               ${roleOptions.map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
             </select>
+            ${Auth.can('canManageOwner') && u.uid !== (Auth.profile && Auth.profile.uid) ? `
+            <button class="btn btn-outline btn-sm" data-toggle-status="${esc(u.uid)}" data-cur="${esc(u.status || 'Active')}" title="${u.status === 'Disabled' ? 'Re-enable this account' : 'Disable sign-in for this account'}">
+              <span class="ms">${u.status === 'Disabled' ? 'lock_open' : 'block'}</span> ${u.status === 'Disabled' ? 'Enable' : 'Disable'}</button>
+            <button class="btn btn-danger btn-sm" data-del-user="${esc(u.uid)}" data-uname="${esc(u.username)}"><span class="ms">delete</span></button>` : ''}
           </td>
         </tr>`).join('')}
       </tbody>
@@ -2207,10 +2232,24 @@ Views.users = async function (el) {
   }));
 
   el.querySelectorAll('button[data-logins]').forEach((b) => b.addEventListener('click', async () => {
-    const logs = await api(`/auth/users/${b.dataset.logins}/logins`);
+    const [logs, adminLogs] = await Promise.all([
+      api(`/auth/users/${b.dataset.logins}/logins`),
+      api(`/auth/users/admin-logs?email=${encodeURIComponent(b.dataset.uemail || '')}`).catch(() => []),
+    ]);
     openModal({
-      title: `Login history — ${b.dataset.uname}`,
-      body: logs.length === 0 ? '<div class="cell-sub">No logins recorded yet.</div>' : `
+      title: `Account history — ${b.dataset.uname}`,
+      body: `
+        ${adminLogs.length === 0 ? '' : `
+        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">Admin actions</h3>
+        ${adminLogs.map((a) => `
+        <div class="history-item">
+          <span class="when">${fmtDateTime(a.timestamp)}</span>
+          <span class="pill ${a.action === 'deleted' || a.action === 'disabled' ? 'pill-rose' : a.action === 'enabled' ? 'pill-emerald' : 'pill-indigo'}">${esc(a.action)}</span>
+          ${a.detail ? `<span class="cell-sub">${esc(a.detail)}</span>` : ''}
+          <span class="cell-sub">by ${esc(a.byName)}</span>
+        </div>`).join('')}
+        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:14px 0 6px">Logins</h3>`}
+        ${logs.length === 0 ? '<div class="cell-sub">No logins recorded yet.</div>' : `
         <div class="table-wrap"><table class="data">
           <thead><tr><th>When</th><th>IP</th><th>Client</th></tr></thead>
           <tbody>
@@ -2221,8 +2260,27 @@ Views.users = async function (el) {
               <td class="cell-sub" title="${esc(l.userAgent || '')}">${esc(String(l.userAgent || '—').slice(0, 60))}</td>
             </tr>`).join('')}
           </tbody>
-        </table></div>`,
+        </table></div>`}`,
       foot: '<button class="btn btn-outline" data-close>Close</button>',
+    });
+  }));
+
+  // Owner-only account administration: disable/enable and delete (audited).
+  el.querySelectorAll('button[data-toggle-status]').forEach((b) => b.addEventListener('click', async () => {
+    const next = b.dataset.cur === 'Disabled' ? 'Active' : 'Disabled';
+    try {
+      await api(`/auth/users/${b.dataset.toggleStatus}/status`, { method: 'PUT', body: { status: next } });
+      toast(next === 'Disabled' ? 'Account disabled — sign-in blocked' : 'Account re-enabled', 'success');
+      Views.users(el);
+    } catch (err) { toast(err.message, 'error'); }
+  }));
+  el.querySelectorAll('button[data-del-user]').forEach((b) => b.addEventListener('click', () => {
+    confirmModal(`Permanently delete the account "${b.dataset.uname}"? Their handover history is kept.`, async () => {
+      try {
+        await api(`/auth/users/${b.dataset.delUser}`, { method: 'DELETE' });
+        toast('Account deleted — recorded in the audit log', 'success');
+        Views.users(el);
+      } catch (err) { toast(err.message, 'error'); }
     });
   }));
 };
@@ -2330,33 +2388,76 @@ Views.catalog = async function (el) {
       </div>
     </div>`);
 
-  /* ---- Product lifecycle durations (moved here from Settings) ---- */
+  /* ---- Product lifecycle durations + per-category EOL on/off ---- */
   const lifecycles = await api('/catalog/lifecycles').catch(() => ({}));
   el.insertAdjacentHTML('beforeend', `
     <div class="card" style="margin-top:16px">
       <div class="card-head"><h3>Product Lifecycle Durations</h3>
-        <span class="cell-sub">Months per category — applied to every asset of that category for EOL flags &amp; reports.</span></div>
+        <span class="cell-sub">Months per category. Untick "EOL" to exclude a category from end-of-life tracking (e.g. accessories).</span></div>
       <div class="card-pad">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px">
           ${Object.entries(lifecycles).map(([cat, m]) => `
-          <label style="font-size:12px;font-weight:600;color:var(--on-surface-variant)">${esc(cat)}
-            <input type="number" min="1" max="240" data-lc="${esc(cat)}" value="${Number(m)}"
-              style="margin-top:4px" ${canEdit ? '' : 'disabled'}></label>`).join('')}
+          <label style="font-size:12px;font-weight:600;color:var(--on-surface-variant)">
+            <span style="display:flex;align-items:center;justify-content:space-between">${esc(cat)}
+              <span class="tc-opt" style="padding:0;font-weight:500"><input type="checkbox" data-lc-on="${esc(cat)}"
+                ${Number(m) > 0 ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> EOL</span></span>
+            <input type="number" min="1" max="240" data-lc="${esc(cat)}" value="${Number(m) > 0 ? Number(m) : 48}"
+              style="margin-top:4px" ${(canEdit && Number(m) > 0) ? '' : 'disabled'}></label>`).join('')}
         </div>
         ${canEdit ? '<button class="btn btn-primary btn-sm" id="lc-save" style="margin-top:14px"><span class="ms">save</span> Save lifecycles</button>' : ''}
       </div>
     </div>`);
 
   if (canEdit) {
+    // EOL checkbox toggles the months input; unticked saves as 0 (= excluded).
+    el.querySelectorAll('[data-lc-on]').forEach((c) => c.addEventListener('change', () => {
+      const inp = el.querySelector(`[data-lc="${c.dataset.lcOn}"]`);
+      if (inp) inp.disabled = !c.checked;
+    }));
     const lcSave = $('#lc-save', el);
     if (lcSave) lcSave.addEventListener('click', async () => {
       try {
-        const body = Object.fromEntries([...el.querySelectorAll('[data-lc]')].map((i) => [i.dataset.lc, Number(i.value) || 1]));
+        const body = Object.fromEntries([...el.querySelectorAll('[data-lc]')].map((i) => {
+          const on = el.querySelector(`[data-lc-on="${i.dataset.lc}"]`);
+          return [i.dataset.lc, on && !on.checked ? 0 : (Number(i.value) || 48)];
+        }));
         const saved = await api('/catalog/lifecycles', { method: 'PUT', body });
         AppConfig.lifecycles = saved;
-        toast('Lifecycle durations saved', 'success');
+        toast('Lifecycle settings saved', 'success');
       } catch (err) { toast(err.message, 'error'); }
     });
+  }
+
+  /* ---- Company departments (feed the employee form) ---- */
+  const departments = await api('/catalog/departments').catch(() => []);
+  el.insertAdjacentHTML('beforeend', `
+    <div class="card" style="margin-top:16px">
+      <div class="card-head">
+        <h3>Departments (${departments.length})</h3>
+        ${canEdit ? '<button class="btn btn-primary btn-sm" id="dept-add"><span class="ms">add</span> Add Department</button>' : ''}
+      </div>
+      <div class="card-pad" style="display:flex;flex-wrap:wrap;gap:8px">
+        ${departments.length === 0 ? '<span class="cell-sub">No departments yet.</span>' :
+          departments.map((d) => `
+          <span class="chip" style="display:inline-flex;align-items:center;gap:6px">${esc(d)}
+            ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-deldept="${esc(d)}" title="Delete"><span class="ms ms-sm">close</span></button>` : ''}
+          </span>`).join('')}
+      </div>
+      <div class="table-foot">This list feeds the Department dropdown on the employee form.</div>
+    </div>`);
+
+  if (canEdit) {
+    $('#dept-add', el).addEventListener('click', () => formModal({
+      title: 'Add department',
+      fields: [{ name: 'name', label: 'Department name *', required: true, full: true, placeholder: 'e.g. Muhasebe' }],
+      submitLabel: 'Add department',
+      async onSubmit(d2) {
+        const r = await api('/catalog/departments', { method: 'POST', body: { name: d2.name } });
+        AppConfig.departments = r;
+        toast(`Department "${d2.name}" added`, 'success');
+        Views.catalog(el);
+      },
+    }));
   }
 
   if (canEdit) {
@@ -2384,6 +2485,11 @@ Views.catalog = async function (el) {
         const r = await api('/catalog/locations/default', { method: 'PUT', body: { name: b.dataset.setdef } });
         AppConfig.defaultLocation = r.defaultLocation;
         toast(`Default location set to ${b.dataset.setdef}`, 'success');
+        Views.catalog(el);
+      } else if (b.dataset.deldept) {
+        const r = await api('/catalog/departments/' + encodeURIComponent(b.dataset.deldept), { method: 'DELETE' });
+        AppConfig.departments = r;
+        toast(`Department "${b.dataset.deldept}" removed`, 'success');
         Views.catalog(el);
       } else if (b.dataset.addspec) {
         const type = b.dataset.addspec;
@@ -2434,6 +2540,20 @@ async function downloadAuthed(url) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+/** Open a protected document IN the browser (new tab) instead of downloading —
+ *  PDFs and images render inline from a blob URL, token stays in the header. */
+async function viewAuthed(url) {
+  try {
+    const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + Auth.token } });
+    if (!resp.ok) throw new Error('Could not open the document');
+    const blob = await resp.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const win = window.open(objUrl, '_blank');
+    if (!win) toast('Pop-up blocked — allow pop-ups to view documents', 'error');
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
 const fmtBytes = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 
 async function showMaintNotes(log, onDone) {
@@ -2475,7 +2595,7 @@ async function showMaintNotes(log, onDone) {
           <tr>
             <td><div style="display:flex;align-items:center;gap:8px">
               <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
-              <span class="cell-title">${esc(d.filename)}</span></div></td>
+              <a href="#" class="cell-title doc-link" data-mdoc-view="${esc(d.id)}" title="Click to view">${esc(d.filename)}</a></div></td>
             <td class="cell-sub">${fmtBytes(d.byteSize || 0)}</td>
             <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' • ' + esc(d.uploadedByName) : ''}</td>
             <td class="actions">
@@ -2521,6 +2641,10 @@ async function showMaintNotes(log, onDone) {
         } catch (err) { toast(err.message, 'error'); upBtn.disabled = false; }
       });
 
+      overlay.querySelectorAll('[data-mdoc-view]').forEach((a) => a.addEventListener('click', (e) => {
+        e.preventDefault();
+        viewAuthed(`/api/maintenance/documents/${a.dataset.mdocView}/download`);
+      }));
       overlay.querySelectorAll('[data-mdoc-dl]').forEach((b) =>
         b.addEventListener('click', () => downloadAuthed(`/api/maintenance/documents/${b.dataset.mdocDl}/download`)));
       overlay.querySelectorAll('[data-mdoc-del]').forEach((b) => b.addEventListener('click', () => {
@@ -3332,4 +3456,221 @@ Views.reports = async function (el) {
       slot.innerHTML = `<div class="card card-pad"><div class="form-error">${esc(err.message)}</div></div>`;
     }
   });
+};
+
+/* ============================== STOCK COUNT ============================== */
+/*
+ * Physical inventory flow: open a session, scan asset barcodes/QRs (handheld
+ * scanner types into the box; the camera button uses BarcodeDetector where the
+ * browser supports it), then close to compare scans against the inventory.
+ * Sessions live on the server, so a count started on the PC can be continued
+ * from a phone signed in to the same app.
+ */
+async function scanWithCamera(onCode) {
+  if (!('BarcodeDetector' in window)) {
+    return toast('Camera scanning is not supported in this browser — use a handheld scanner or type the tag', 'error');
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch {
+    return toast('Camera access denied (note: the camera needs HTTPS or localhost)', 'error');
+  }
+  const detector = new BarcodeDetector({ formats: ['qr_code', 'code_128'] });
+  let last = ''; let lastAt = 0; let timer = null;
+  const stop = () => { clearInterval(timer); stream.getTracks().forEach((t) => t.stop()); closeModal(); };
+  openModal({
+    title: 'Scan with camera',
+    body: `
+      <video id="scan-video" autoplay playsinline style="width:100%;border-radius:12px;background:#000"></video>
+      <div class="cell-sub" style="margin-top:8px;text-align:center">Point at the asset's barcode or QR — scans register automatically.</div>
+      <div id="scan-last" style="text-align:center;margin-top:6px;font-weight:700"></div>`,
+    foot: '<button class="btn btn-primary" id="scan-stop">Stop scanning</button>',
+    onMount(overlay) {
+      const video = $('#scan-video', overlay);
+      video.srcObject = stream;
+      $('#scan-stop', overlay).addEventListener('click', stop);
+      timer = setInterval(async () => {
+        try {
+          const codes = await detector.detect(video);
+          const v = codes[0] && codes[0].rawValue;
+          if (v && (v !== last || Date.now() - lastAt > 2500)) {
+            last = v; lastAt = Date.now();
+            $('#scan-last', overlay).textContent = v;
+            onCode(v);
+          }
+        } catch { /* frame not ready */ }
+      }, 350);
+    },
+  });
+}
+
+Views.stockcount = async function (el, params = {}) {
+  const canDo = Auth.can('canManageAssets');
+  const counts = await api('/counts');
+  const openId = params.open || (counts.find((c) => c.status === 'open') || {}).id;
+
+  el.innerHTML = `
+    ${pageHead('Stock Count', 'Physical inventory: scan devices and reconcile against the system.', canDo
+      ? '<button class="btn btn-primary" id="sc-new"><span class="ms">add</span> Start New Count</button>' : '')}
+    <div id="sc-active"></div>
+    <div class="gs-section" style="margin:20px 0 8px">Count Sessions</div>
+    <div class="card"><div class="table-wrap"><table class="data">
+      <thead><tr><th>Session</th><th>Location</th><th>Status</th><th>Scans</th><th>Started</th><th style="text-align:right"></th></tr></thead>
+      <tbody>
+        ${counts.length === 0 ? '<tr><td colspan="6" class="table-empty">No counts yet — start one to begin scanning.</td></tr>' :
+          counts.map((c) => `
+          <tr>
+            <td class="cell-title">${esc(c.name)}</td>
+            <td>${esc(c.location || 'All locations')}</td>
+            <td>${c.status === 'open' ? '<span class="pill pill-emerald">Open</span>' : '<span class="pill pill-indigo">Closed</span>'}</td>
+            <td>${c.scanCount ?? ''}</td>
+            <td class="cell-sub">${fmtDateTime(c.createdAt)}${c.createdByName ? ' • ' + esc(c.createdByName) : ''}</td>
+            <td class="actions">
+              ${c.status === 'open'
+                ? `<button class="btn btn-primary btn-sm" data-sc-open="${esc(c.id)}"><span class="ms">qr_code_scanner</span> Continue</button>`
+                : `<button class="btn btn-outline btn-sm" data-sc-result="${esc(c.id)}"><span class="ms">summarize</span> Result</button>`}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table></div></div>`;
+
+  const active = $('#sc-active', el);
+  let currentOpen = openId; // the session shown in the live panel (poll target)
+
+  async function renderActive(id) {
+    if (!id) { active.innerHTML = ''; return; }
+    currentOpen = id;
+    let c;
+    try { c = await api('/counts/' + id); } catch { active.innerHTML = ''; return; }
+    if (c.status !== 'open') { active.innerHTML = ''; return; }
+    const pct = c.expectedTotal ? Math.round((c.matchedTotal / c.expectedTotal) * 100) : 0;
+    active.innerHTML = `
+      <div class="card card-pad" style="border-color:var(--primary-container);box-shadow:0 0 0 1px var(--primary-container)">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">
+            <div class="cell-title" style="font-size:16px">${esc(c.name)} <span class="pill pill-emerald">Open</span></div>
+            <div class="cell-sub">${esc(c.location || 'All locations')} • counted <strong>${c.matchedTotal}</strong> of
+              <strong>${c.expectedTotal}</strong> expected devices (${pct}%)
+              ${c.scans.length - c.matchedTotal > 0 ? ` • <span style="color:var(--rose-700)">${c.scans.length - c.matchedTotal} unknown scan(s)</span>` : ''}</div>
+            <div class="seat-bar" style="margin-top:8px;max-width:340px"><i style="width:${pct}%"></i></div>
+          </div>
+          ${canDo ? `
+          <button class="btn btn-outline" id="sc-camera"><span class="ms">photo_camera</span> Camera</button>
+          <button class="btn btn-danger" id="sc-close"><span class="ms">task_alt</span> Close &amp; Compare</button>` : ''}
+        </div>
+        ${canDo ? `
+        <div class="search-box" style="margin-top:14px;max-width:420px"><span class="ms">qr_code_scanner</span>
+          <input id="sc-input" placeholder="Scan barcode / QR or type the asset tag, then Enter…" autocomplete="off">
+        </div>
+        <div class="cell-sub" style="margin-top:6px">Tip: open this page on your phone (same address, same login) to keep scanning on the move — progress is shared live.</div>` : ''}
+        <div id="sc-recent" style="margin-top:10px">
+          ${c.scans.slice(0, 8).map((s) => `
+          <div class="history-item">
+            <span class="when">${fmtDateTime(s.scannedAt)}</span>
+            <span class="pill ${s.matched ? 'pill-emerald' : 'pill-rose'}">${s.matched ? 'OK' : 'Unknown'}</span>
+            <span class="mono">${esc(s.assetTag || s.raw)}</span>
+            <span class="cell-sub">by ${esc(s.scannedByName || '—')}</span>
+          </div>`).join('')}
+        </div>
+      </div>`;
+
+    if (!canDo) return;
+    const submitScan = async (raw) => {
+      if (!raw || !raw.trim()) return;
+      try {
+        const r = await api(`/counts/${id}/scan`, { method: 'POST', body: { raw: raw.trim() } });
+        if (r.duplicate) toast(`${esc(r.assetTag || r.raw)} already scanned`, 'error');
+        else if (r.matched) toast(`✓ ${r.asset.brand} ${r.asset.model} (${r.assetTag}) counted`, 'success');
+        else toast(`"${r.raw}" is not in the inventory — recorded as unknown`, 'error');
+        renderActive(id);
+      } catch (err) { toast(err.message, 'error'); }
+    };
+    const inp = $('#sc-input', active);
+    inp.focus();
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitScan(inp.value); inp.value = ''; }
+    });
+    $('#sc-camera', active).addEventListener('click', () => scanWithCamera(submitScan));
+    $('#sc-close', active).addEventListener('click', () => confirmModal(
+      'Close this count and compare against the inventory? No more scans can be added afterwards.',
+      async () => {
+        const closed = await api(`/counts/${id}/close`, { method: 'POST' });
+        toast('Count closed', 'success');
+        Views.stockcount(el, {});
+        showCountResult(closed);
+      }));
+  }
+
+  function showCountResult(c) {
+    const s = c.summary || {};
+    openModal({
+      title: `Count result — ${c.name}`,
+      wide: true,
+      body: `
+        <div class="grid grid-4" style="margin-bottom:16px">
+          <div class="card card-pad metric"><h3 class="card-title">Expected</h3><div class="metric-value">${s.expected ?? 0}</div></div>
+          <div class="card card-pad metric"><h3 class="card-title">Found</h3><div class="metric-value" style="color:var(--emerald-600)">${s.found ?? 0}</div></div>
+          <div class="card card-pad metric"><h3 class="card-title">Missing</h3><div class="metric-value" style="color:var(--rose-700)">${s.missingCount ?? 0}</div></div>
+          <div class="card card-pad metric"><h3 class="card-title">Unknown scans</h3><div class="metric-value">${s.unexpectedCount ?? 0}</div></div>
+        </div>
+        ${(s.missing || []).length ? `
+        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">Missing devices (in system, not scanned)</h3>
+        <div class="table-wrap" style="max-height:300px;overflow-y:auto"><table class="data">
+          <thead><tr><th>Tag</th><th>Device</th><th>Status</th><th>Location</th><th>Holder</th></tr></thead>
+          <tbody>${s.missing.map((m) => `
+            <tr><td class="mono">${esc(m.assetTag)}</td><td>${esc(m.brand)} ${esc(m.model)}</td>
+            <td>${badge(m.status)}</td><td class="cell-sub">${esc(m.location || '—')}</td><td class="cell-sub">${esc(m.holder || '—')}</td></tr>`).join('')}
+          </tbody></table></div>` : '<div class="cell-sub">🎉 Nothing missing — every expected device was scanned.</div>'}
+        ${(s.unexpected || []).length ? `
+        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:14px 0 6px">Unknown scans (not in the system)</h3>
+        <div>${s.unexpected.map((u) => `<span class="chip mono" style="margin:0 6px 6px 0;display:inline-block">${esc(u)}</span>`).join('')}</div>` : ''}`,
+      foot: `<button class="btn btn-outline" data-close>Close</button>
+        ${(s.missing || []).length ? '<button class="btn btn-primary" id="sc-export"><span class="ms">download</span> Export missing (CSV)</button>' : ''}`,
+      onMount(overlay) {
+        const ex = $('#sc-export', overlay);
+        if (ex) ex.addEventListener('click', () => csvDownload(
+          `stock-count-missing-${new Date().toISOString().slice(0, 10)}.csv`,
+          ['Asset Tag', 'Brand', 'Model', 'Category', 'Status', 'Location', 'Holder'],
+          (s.missing || []).map((m) => [m.assetTag, m.brand, m.model, m.category, m.status, m.location || '', m.holder || ''])
+        ));
+      },
+    });
+  }
+
+  if (canDo) {
+    $('#sc-new', el).addEventListener('click', () => formModal({
+      title: 'Start a new stock count',
+      fields: [
+        { name: 'name', label: 'Count name', placeholder: `e.g. ${new Date().getFullYear()} Q${Math.ceil((new Date().getMonth() + 1) / 3)} sayım`, full: true },
+        { name: 'location', label: 'Limit to location (optional)', type: 'select', value: '',
+          options: [{ value: '', label: 'All locations' }, ...(AppConfig.locations || [])] },
+      ],
+      submitLabel: 'Start count',
+      async onSubmit(d) {
+        const c = await api('/counts', { method: 'POST', body: { name: d.name, location: d.location || null } });
+        toast(`Count "${c.name}" started — begin scanning`, 'success');
+        Views.stockcount(el, { open: c.id });
+      },
+    }));
+  }
+
+  bindView(el, async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.scOpen) { renderActive(b.dataset.scOpen); window.scrollTo(0, 0); }
+    if (b.dataset.scResult) {
+      const c = await api('/counts/' + b.dataset.scResult);
+      showCountResult(c);
+    }
+  });
+
+  // Live-sync scans from other devices while a session is open on screen.
+  const poll = setInterval(() => {
+    if (!el.isConnected) return clearInterval(poll);
+    const cur = active.querySelector('#sc-input');
+    // Only refresh when the operator isn't mid-typing.
+    if (currentOpen && (!cur || !cur.value)) renderActive(currentOpen);
+  }, 7000);
+
+  renderActive(openId);
 };

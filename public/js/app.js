@@ -14,6 +14,7 @@ const ROUTES = {
   '#/employees': { title: 'Employees', view: 'employees', icon: 'badge' },
   '#/handover': { title: 'Handover Ops', view: 'handover', icon: 'assignment_turned_in' },
   '#/maintenance': { title: 'Maintenance & Repair', view: 'maintenance', icon: 'build' },
+  '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/users': { title: 'IT Users', view: 'users', icon: 'vpn_key', perm: 'canManageUsers' },
 };

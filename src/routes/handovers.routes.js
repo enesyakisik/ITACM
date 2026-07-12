@@ -27,7 +27,7 @@ router.get('/', asyncHandler(async (req, res) => {
 /** GET /api/handovers/:id/pdf — download the receipt as a real PDF file. */
 router.get('/:id/pdf', asyncHandler(async (req, res) => {
   const { buildReceiptPdf } = require('../utils/handoverArchive');
-  const { buffer, filename } = await buildReceiptPdf(req.params.id);
+  const { buffer, filename } = await buildReceiptPdf(req.params.id, req.user.username || req.user.email);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buffer);

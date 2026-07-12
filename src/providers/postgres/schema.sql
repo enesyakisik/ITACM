@@ -236,3 +236,53 @@ CREATE TABLE IF NOT EXISTS maintenance_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_maint_docs_asset ON maintenance_documents (asset_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_maint_docs_log ON maintenance_documents (maintenance_id);
+
+-- Who executed a handover, denormalised: reprints must show the ORIGINAL
+-- assigner, not whoever happens to be logged in.
+ALTER TABLE handovers ADD COLUMN IF NOT EXISTS it_user_name TEXT;
+
+-- IT users can be disabled (kept for audit) or deleted by an Owner.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Active';
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
+ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('Active', 'Disabled'));
+
+-- Admin actions on IT accounts (disable/enable/delete) — permanent audit trail
+-- that survives the account itself (no FK on purpose).
+CREATE TABLE IF NOT EXISTS user_admin_logs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  target_email TEXT NOT NULL,
+  target_name  TEXT,
+  action       TEXT NOT NULL CHECK (action IN ('disabled', 'enabled', 'deleted', 'role_changed')),
+  detail       TEXT,
+  by_name      TEXT NOT NULL,
+  "timestamp"  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_user_admin_logs ON user_admin_logs (target_email, "timestamp" DESC);
+
+-- Company departments list (managed in Product Catalog, feeds the employee form)
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS departments JSONB;
+
+-- Physical stock counts: a session collects scans (barcode/QR/manual) from any
+-- signed-in device; closing it compares scans against the live inventory.
+CREATE TABLE IF NOT EXISTS stock_counts (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT NOT NULL,
+  location        TEXT,
+  status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  created_by_name TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at       TIMESTAMPTZ,
+  summary         JSONB
+);
+CREATE TABLE IF NOT EXISTS stock_count_scans (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  count_id        UUID NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+  raw             TEXT NOT NULL,
+  asset_id        UUID,
+  asset_tag       TEXT,
+  matched         BOOLEAN NOT NULL DEFAULT FALSE,
+  scanned_by_name TEXT,
+  scanned_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (count_id, raw)
+);
+CREATE INDEX IF NOT EXISTS idx_scans_count ON stock_count_scans (count_id, scanned_at DESC);

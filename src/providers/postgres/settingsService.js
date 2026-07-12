@@ -1,12 +1,12 @@
 /** App settings (postgres): company branding, handover terms, onboarding flag. */
 const { query } = require('./pool');
 const { HttpError } = require('../../utils/httpError');
-const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS, DEFAULT_HANDOVER_TEMPLATE } = require('../../utils/defaults');
+const { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS, DEFAULT_HANDOVER_TEMPLATE, DEFAULT_DEPARTMENTS } = require('../../utils/defaults');
 
 
 async function getSettings() {
   const { rows } = await query(
-    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options, document_storage, handover_template FROM app_settings WHERE id = 1'
+    'SELECT company_name, company_logo, onboarded, handover_terms, lifecycles, locations, default_location, spec_options, document_storage, handover_template, departments FROM app_settings WHERE id = 1'
   );
   const s = rows[0] || {};
   return {
@@ -17,6 +17,7 @@ async function getSettings() {
     lifecycles: { ...DEFAULT_LIFECYCLES, ...(s.lifecycles || {}) },
     locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
     defaultLocation: s.default_location || null,
+    departments: (s.departments && s.departments.length) ? s.departments : [...DEFAULT_DEPARTMENTS],
     specOptions: { ...DEFAULT_SPEC_OPTIONS, ...(s.spec_options || {}) },
     documentStorage: s.document_storage || { provider: 'local' },
     // Merge the saved template over defaults so newly added options appear automatically.
@@ -58,8 +59,9 @@ function validateLifecycles(lc) {
   if (typeof lc !== 'object') throw HttpError.badRequest('lifecycles must be an object of category -> months');
   for (const [cat, months] of Object.entries(lc)) {
     const m = Number(months);
-    if (!Number.isInteger(m) || m < 1 || m > 240) {
-      throw HttpError.badRequest(`Lifecycle for ${cat} must be 1-240 months`);
+    // 0 = EOL tracking disabled for this category (set from Product Catalog).
+    if (!Number.isInteger(m) || m < 0 || m > 240) {
+      throw HttpError.badRequest(`Lifecycle for ${cat} must be 0-240 months (0 = EOL tracking off)`);
     }
   }
 }
@@ -75,7 +77,7 @@ function validateSpecOptions(so) {
   }
 }
 
-async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage, handoverTemplate }) {
+async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms, lifecycles, locations, defaultLocation, specOptions, documentStorage, handoverTemplate, departments }) {
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -98,7 +100,8 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
        default_location = CASE WHEN $7::text IS NOT NULL THEN NULLIF($7, '__none__') ELSE default_location END,
        spec_options   = CASE WHEN $8::jsonb IS NOT NULL THEN $8 ELSE spec_options END,
        document_storage = CASE WHEN $9::jsonb IS NOT NULL THEN $9 ELSE document_storage END,
-       handover_template = CASE WHEN $10::jsonb IS NOT NULL THEN $10 ELSE handover_template END
+       handover_template = CASE WHEN $10::jsonb IS NOT NULL THEN $10 ELSE handover_template END,
+       departments    = CASE WHEN $11::jsonb IS NOT NULL THEN $11 ELSE departments END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecycles ? JSON.stringify(lifecycles) : null,
@@ -106,7 +109,8 @@ async function saveSettings({ companyName, companyLogo, onboarded, handoverTerms
      defaultLocation === null ? '__none__' : (defaultLocation ?? null),
      specOptions ? JSON.stringify(specOptions) : null,
      documentStorage ? JSON.stringify(documentStorage) : null,
-     cleanTemplate ? JSON.stringify(cleanTemplate) : null]
+     cleanTemplate ? JSON.stringify(cleanTemplate) : null,
+     departments ? JSON.stringify(departments.map((d) => String(d).trim()).filter(Boolean)) : null]
   );
   return getSettings();
 }

@@ -108,6 +108,7 @@ function createApp() {
   app.use('/api/consumables', require('./routes/consumables.routes'));
   app.use('/api/catalog', require('./routes/catalog.routes'));
   app.use('/api/documents', require('./routes/documents.routes'));
+  app.use('/api/counts', require('./routes/counts.routes'));
 
   // API 404s stay JSON; anything else falls back to the SPA shell.
   app.use((req, res, next) => {

@@ -117,4 +117,34 @@ router.delete('/specs/:type/:value', requireRole('Owner', 'Admin', 'Helpdesk'), 
   res.json({ success: true, data: saved.specOptions });
 }));
 
+/* ---- Company departments (stored in settings, feed the employee form) ---- */
+
+/** GET /api/catalog/departments — department list (all roles). */
+router.get('/departments', asyncHandler(async (req, res) => {
+  const s = await settingsService.getSettings();
+  res.json({ success: true, data: s.departments });
+}));
+
+/** POST /api/catalog/departments — add a department (Admin/Helpdesk). */
+router.post('/departments', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+  const name = String((req.body || {}).name || '').trim();
+  if (!name || name.length > 60) throw HttpError.badRequest('Department name is required (max 60 chars)');
+  const s = await settingsService.getSettings();
+  if (s.departments.some((d) => d.toLowerCase() === name.toLowerCase())) {
+    throw HttpError.conflict(`Department "${name}" already exists`);
+  }
+  const saved = await settingsService.saveSettings({ departments: [...s.departments, name] });
+  res.status(201).json({ success: true, data: saved.departments });
+}));
+
+/** DELETE /api/catalog/departments/:name — remove a department (Admin/Helpdesk). */
+router.delete('/departments/:name', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+  const name = req.params.name;
+  const s = await settingsService.getSettings();
+  if (!s.departments.includes(name)) throw HttpError.notFound(`Department "${name}" not found`);
+  if (s.departments.length <= 1) throw HttpError.badRequest('At least one department must remain');
+  const saved = await settingsService.saveSettings({ departments: s.departments.filter((d) => d !== name) });
+  res.json({ success: true, data: saved.departments });
+}));
+
 module.exports = router;

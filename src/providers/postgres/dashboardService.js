@@ -27,8 +27,11 @@ async function getEolAssets() {
     const purchaseMs = new Date(pd).getTime();
     if (!purchaseMs) return;
 
-    // Per-asset override wins over the category default.
-    const months = row.lifecycle_months || lc[row.category] || lc.Other || 48;
+    // Per-asset override wins over the category default; a category set to 0
+    // in the Product Catalog is excluded from EOL tracking entirely.
+    const catMonths = lc[row.category] != null ? lc[row.category] : (lc.Other || 48);
+    const months = row.lifecycle_months || catMonths;
+    if (!months) return;
     const eolMs = purchaseMs + months * 30.4375 * 24 * 3600 * 1000;
     const pct = ((now - purchaseMs) / (eolMs - purchaseMs)) * 100;
 

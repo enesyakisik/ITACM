@@ -26,6 +26,7 @@ async function login({ email, password }, meta = {}) {
   // Same error for unknown email and wrong password — no account enumeration.
   const valid = user && (await bcrypt.compare(password, user.password_hash));
   if (!valid) throw HttpError.unauthorized('Invalid email or password');
+  if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
 
   const token = jwt.sign(
     { sub: user.id, email: user.email, role: user.role },
@@ -57,9 +58,10 @@ async function verifyToken(token) {
       : HttpError.unauthorized('Invalid token');
   }
 
-  // Live lookup: deleted users are locked out and role changes apply instantly.
-  const { rows } = await query('SELECT id, email, role, username FROM users WHERE id = $1', [payload.sub]);
+  // Live lookup: deleted/disabled users are locked out and role changes apply instantly.
+  const { rows } = await query('SELECT id, email, role, username, status FROM users WHERE id = $1', [payload.sub]);
   if (!rows[0]) throw HttpError.unauthorized('Account no longer exists');
+  if (rows[0].status === 'Disabled') throw HttpError.unauthorized('This account has been disabled');
 
   return { uid: rows[0].id, email: rows[0].email, role: rows[0].role, username: rows[0].username };
 }
@@ -117,13 +119,14 @@ async function upsertAdmin({ username, email, password }) {
   return { uid: rows[0].id, username: rows[0].username, email: rows[0].email, role: 'Owner' };
 }
 
-async function setUserRole(uid, role) {
+async function setUserRole(uid, role, actor) {
   assertValidRole(role);
   const { rows } = await query(
-    'UPDATE users SET role = $2 WHERE id = $1 RETURNING id, role',
+    'UPDATE users SET role = $2 WHERE id = $1 RETURNING id, role, email, username',
     [uid, role]
   );
   if (!rows[0]) throw HttpError.notFound(`No user with id ${uid}`);
+  if (actor) await logAdminAction(rows[0], 'role_changed', actor.username || actor.email, `→ ${role}`);
   return { uid, role };
 }
 
@@ -140,9 +143,58 @@ async function getVerifiedProfile(user) {
 
 async function listUsers() {
   const { rows } = await query(
-    `SELECT id AS uid, username, email, role, created_at AS "createdAt",
+    `SELECT id AS uid, username, email, role, status, created_at AS "createdAt",
             last_login_at AS "lastLoginAt"
      FROM users ORDER BY created_at DESC`
+  );
+  return rows;
+}
+
+/* ---- Owner-only account administration (audited in user_admin_logs) ---- */
+
+const logAdminAction = (target, action, byName, detail = null) => query(
+  'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
+  [target.email, target.username || null, action, detail, byName]
+);
+
+async function getTargetUser(uid, actor) {
+  const { rows } = await query('SELECT id, email, username, role, status FROM users WHERE id = $1', [uid]);
+  if (!rows[0]) throw HttpError.notFound(`No user with id ${uid}`);
+  if (rows[0].id === actor.uid) throw HttpError.badRequest('You cannot disable or delete your own account');
+  return rows[0];
+}
+
+async function setUserStatus(uid, status, actor) {
+  if (!['Active', 'Disabled'].includes(status)) throw HttpError.badRequest('status must be Active or Disabled');
+  const target = await getTargetUser(uid, actor);
+  if (target.role === 'Owner' && status === 'Disabled') {
+    const { rows } = await query(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'Owner' AND status = 'Active'`);
+    if (rows[0].n <= 1) throw HttpError.conflict('Cannot disable the last active Owner');
+  }
+  await query('UPDATE users SET status = $2 WHERE id = $1', [uid, status]);
+  await logAdminAction(target, status === 'Disabled' ? 'disabled' : 'enabled', actor.username || actor.email);
+  return { uid, status };
+}
+
+async function deleteUser(uid, actor) {
+  const target = await getTargetUser(uid, actor);
+  if (target.role === 'Owner') {
+    const { rows } = await query(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'Owner'`);
+    if (rows[0].n <= 1) throw HttpError.conflict('Cannot delete the last Owner');
+  }
+  // login_logs cascade; handovers keep it_user_id/name (denormalised) for history.
+  await query('DELETE FROM users WHERE id = $1', [uid]);
+  await logAdminAction(target, 'deleted', actor.username || actor.email, `role was ${target.role}`);
+  return { uid, deleted: true };
+}
+
+/** Admin actions (disable/enable/delete/role) for one account, newest first. */
+async function getAdminLogs(email, limit = 25) {
+  const { rows } = await query(
+    `SELECT target_email AS "targetEmail", target_name AS "targetName", action, detail,
+            by_name AS "byName", "timestamp"
+     FROM user_admin_logs WHERE target_email = $1 ORDER BY "timestamp" DESC LIMIT $2`,
+    [email, Math.min(Number(limit) || 25, 200)]
   );
   return rows;
 }
@@ -150,4 +202,5 @@ async function listUsers() {
 module.exports = {
   login, verifyToken, recordLogin, getLoginLogs,
   createItUser, upsertAdmin, setUserRole, getVerifiedProfile, listUsers,
+  setUserStatus, deleteUser, getAdminLogs,
 };

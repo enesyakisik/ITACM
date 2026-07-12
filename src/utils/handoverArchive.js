@@ -5,7 +5,7 @@
  */
 const { renderHandoverPdfBuffer } = require('./handoverPdf');
 
-async function buildReceiptPdf(handoverId) {
+async function buildReceiptPdf(handoverId, currentUserName) {
   const { handoverService, employeeService, settingsService } = require('../services');
   const handover = await handoverService.getHandover(handoverId);
   const settings = await settingsService.getSettings();
@@ -14,8 +14,14 @@ async function buildReceiptPdf(handoverId) {
     employee = await employeeService.getEmployee(handover.employeeId);
   } catch { /* render without dept/title */ }
 
+  // "Delivered By" is the ORIGINAL assigner; only when that account is
+  // disabled/deleted does the current user's name appear instead.
+  const deliveredBy = (handover.itUserName && handover.itUserActive !== false)
+    ? handover.itUserName
+    : (currentUserName || handover.itUserName || 'IT Department');
+
   const formNo = 'HF-' + String(handover.id).slice(0, 8).toUpperCase();
-  const buffer = await renderHandoverPdfBuffer({ handover, employee, settings });
+  const buffer = await renderHandoverPdfBuffer({ handover, employee, settings, deliveredBy });
   return { handover, buffer, formNo, filename: `zimmet-${formNo}.pdf` };
 }
 

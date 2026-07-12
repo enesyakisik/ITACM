@@ -29,6 +29,18 @@ const DEFAULT_SPEC_OPTIONS = {
   storage: ['256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD'],
 };
 
+/** Default company departments — shown in the employee form and managed from
+ *  the Product Catalog screen. */
+const DEFAULT_DEPARTMENTS = [
+  'Bilgi Teknolojileri',
+  'Yazılım Geliştirme',
+  'Finans',
+  'İnsan Kaynakları',
+  'Satış',
+  'Pazarlama',
+  'Operasyon',
+];
+
 /** Default Zimmet Tutanağı (handover form) template — every field is
  *  customizable from Settings → "Customize Zimmet Template". Honored by both the
  *  on-screen print (printHandover) and the server-generated PDF (handoverPdf). */
@@ -56,4 +68,4 @@ const DEFAULT_HANDOVER_TEMPLATE = {
   footerNote: '',
 };
 
-module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS, DEFAULT_HANDOVER_TEMPLATE };
+module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS, DEFAULT_HANDOVER_TEMPLATE, DEFAULT_DEPARTMENTS };

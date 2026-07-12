@@ -59,7 +59,23 @@ router.post('/users', authenticate, requireRole('Owner', 'Admin'), asyncHandler(
 /** PUT /api/auth/users/:uid/role — approve/change a role (Owner/Admin; Owner role Owner-only). */
 router.put('/users/:uid/role', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
   guardOwnerAssignment(req);
-  res.json({ success: true, data: await authProvider.setUserRole(req.params.uid, req.body.role) });
+  res.json({ success: true, data: await authProvider.setUserRole(req.params.uid, req.body.role, req.user) });
+}));
+
+/** GET /api/auth/users/admin-logs?email= — disable/enable/delete/role audit trail (Owner/Admin).
+ *  Registered before /users/:uid/logins so the literal path wins. */
+router.get('/users/admin-logs', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await authProvider.getAdminLogs(String(req.query.email || ''), req.query.limit) });
+}));
+
+/** PUT /api/auth/users/:uid/status — disable/enable an account (Owner only, audited). */
+router.put('/users/:uid/status', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await authProvider.setUserStatus(req.params.uid, req.body.status, req.user) });
+}));
+
+/** DELETE /api/auth/users/:uid — permanently remove an account (Owner only, audited). */
+router.delete('/users/:uid', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await authProvider.deleteUser(req.params.uid, req.user) });
 }));
 
 /** GET /api/auth/users/:uid/logins — login history for a user (Owner/Admin). */
