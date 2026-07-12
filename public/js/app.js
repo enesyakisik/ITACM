@@ -21,9 +21,20 @@ const ROUTES = {
 };
 
 function renderNav() {
-  // Nav labels come from the i18n dictionary (nav.<view>); untranslated views
-  // fall back to the English title.
-  const label = (r) => { const k = 'nav.' + r.view; const v = t(k); return v === k ? r.title : v; };
+  // Nav labels come from the i18n dictionary. Prefer nav.<view>, then fall back
+  // to a few aliases where the route view name ≠ the historical nav key.
+  const NAV_KEY_ALIAS = { assets: 'hardware', licenses: 'software' };
+  const label = (r) => {
+    const primary = 'nav.' + r.view;
+    const alias = NAV_KEY_ALIAS[r.view] ? 'nav.' + NAV_KEY_ALIAS[r.view] : null;
+    const v = t(primary);
+    if (v !== primary) return v;
+    if (alias) {
+      const a = t(alias);
+      if (a !== alias) return a;
+    }
+    return r.title;
+  };
   $('#nav').innerHTML = Object.entries(ROUTES)
     .filter(([, r]) => !r.perm || Auth.can(r.perm))
     .map(([hash, r]) =>
