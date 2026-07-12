@@ -14,35 +14,38 @@
 
   <!-- ============ ONBOARDING (first run) — guided feature tour ============ -->
   <div id="onboarding-screen" class="onboarding-screen hidden">
-    <div class="ob-panel">
-      <!-- progress -->
+    <div class="ob-panel ob-panel-wide">
       <div class="ob-progress">
         <div class="ob-progress-bar"><i id="ob-bar"></i></div>
+        <span class="ob-step-label" id="ob-step-label"></span>
         <select id="ob-lang" class="ob-lang" title="Language / Dil"></select>
-        <button type="button" id="ob-skip" class="ob-skip">Skip intro →</button>
+        <button type="button" id="ob-skip" class="ob-skip">Skip to setup →</button>
       </div>
-
-      <!-- feature tour (JS-driven) -->
       <div id="ob-tour"></div>
-
-      <!-- final step: setup form -->
       <div id="ob-setup" class="hidden">
-        <div class="ob-slide-icon"><span class="ms">rocket_launch</span></div>
-        <h2 class="ob-slide-title">Create your workspace</h2>
-        <p class="ob-slide-desc">Set your company identity and the <strong>Owner</strong> account — the top-level admin who manages branding, users and settings.</p>
-        <p class="ob-slide-desc" style="font-size:12.5px"><span class="ms ms-sm" style="vertical-align:-2px">upload_file</span>
-          Already keeping your inventory in <strong>Excel</strong>? After signing in, open
-          <strong>Hardware&nbsp;Inventory&nbsp;→&nbsp;Import&nbsp;Excel/CSV</strong> — download the template, fill it, and
-          devices, employees and zimmet assignments are migrated automatically.</p>
+        <div class="ob-setup-head">
+          <div class="ob-slide-icon"><span class="ms">rocket_launch</span></div>
+          <div>
+            <h2 class="ob-slide-title">Create your workspace</h2>
+            <p class="ob-slide-desc" style="margin:0">Company identity, zimmet design, and the <strong>Owner</strong> account.</p>
+          </div>
+        </div>
+        <p class="ob-slide-desc" style="font-size:12.5px;margin-top:12px"><span class="ms ms-sm" style="vertical-align:-2px">upload_file</span>
+          Coming from Excel? After sign-in: <strong>Hardware → Import Excel/CSV</strong> migrates devices, employees and zimmet.</p>
         <form id="onboarding-form" class="ob-form">
           <h3 class="ob-section">Company</h3>
           <label>Company name *
             <input type="text" name="companyName" required maxlength="80" placeholder="Acme Teknoloji A.Ş.">
           </label>
-          <label>Company logo <span class="ob-hint">(optional, PNG/JPG/SVG, max ~300KB — shown in the UI &amp; on printed forms)</span>
+          <label>Company logo <span class="ob-hint">(optional, PNG/JPG/SVG, max ~300KB)</span>
             <input type="file" name="logoFile" accept="image/*">
           </label>
           <div id="ob-logo-preview" class="ob-logo-preview hidden"></div>
+
+          <h3 class="ob-section">Zimmet form design</h3>
+          <p class="ob-hint" style="margin:0 0 10px">Visual look of printed handover forms — change anytime in Settings.</p>
+          <div class="ob-tpl-cards" id="ob-tpl-cards" role="radiogroup" aria-label="Default zimmet design"></div>
+
           <h3 class="ob-section">Owner account <span class="ob-hint">(highest privilege)</span></h3>
           <label>Display name *
             <input type="text" name="adminUsername" required placeholder="Enes Yakışık">
@@ -52,6 +55,10 @@
           </label>
           <label>Password * <span class="ob-hint">(min 8 characters)</span>
             <input type="password" name="adminPassword" required minlength="8" autocomplete="new-password">
+          </label>
+          <label class="ob-check">
+            <input type="checkbox" name="enableTips" checked>
+            <span>Show UI tips after I sign in (you can turn this off anytime from Help)</span>
           </label>
           <div id="onboarding-error" class="login-error hidden"></div>
           <div class="ob-nav">
@@ -115,6 +122,9 @@
 
     <main class="main">
       <header class="topbar">
+        <button type="button" class="icon-btn menu-toggle" id="menu-toggle" aria-label="Menu" title="Menu">
+          <span class="ms">menu</span>
+        </button>
         <div class="topbar-search">
           <span class="ms">search</span>
           <input type="search" id="global-search" data-i18n-ph="topbar.search" placeholder="Search assets, employees, or tags (Cmd+K)">
@@ -126,9 +136,12 @@
           <span class="avatar avatar-top" id="topbar-avatar" style="cursor:pointer" title="My profile"></span>
         </div>
       </header>
+      <div id="page-tip" class="page-tip hidden" role="status"></div>
       <div id="view" class="view"></div>
     </main>
   </div>
+  <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+  <div id="tip-coach" class="tip-coach hidden" aria-live="polite"></div>
 
   <div id="modal-root"></div>
   <div id="toast-root" class="toast-root"></div>

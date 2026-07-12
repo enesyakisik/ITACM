@@ -5,7 +5,7 @@
  */
 const { renderHandoverPdfBuffer } = require('./handoverPdf');
 
-async function buildReceiptPdf(handoverId, currentUserName) {
+async function buildReceiptPdf(handoverId, currentUserName, lang, templateIdOverride) {
   const { handoverService, employeeService, settingsService } = require('../services');
   const handover = await handoverService.getHandover(handoverId);
   const settings = await settingsService.getSettings();
@@ -21,7 +21,12 @@ async function buildReceiptPdf(handoverId, currentUserName) {
     : (currentUserName || handover.itUserName || 'IT Department');
 
   const formNo = 'HF-' + String(handover.id).slice(0, 8).toUpperCase();
-  const buffer = await renderHandoverPdfBuffer({ handover, employee, settings, deliveredBy });
+  const templateId = templateIdOverride || handover.templateId || null;
+  const buffer = await renderHandoverPdfBuffer({
+    handover, employee, settings, deliveredBy,
+    lang: lang || settings.language || 'en',
+    templateId,
+  });
   return { handover, buffer, formNo, filename: `zimmet-${formNo}.pdf` };
 }
 

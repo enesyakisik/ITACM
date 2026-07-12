@@ -100,18 +100,54 @@ async function assignLine(id, employeeId, itUser) {
        WHERE id = $1 RETURNING *`,
       [id, employeeId, e.rows[0].full_name]
     );
+    const by = itUser && (itUser.uid || itUser.id) || null;
+    const byName = (itUser && (itUser.username || itUser.email)) || 'IT';
+    await t.query(
+      `INSERT INTO mobile_line_history
+         (line_id, phone_number, employee_id, employee_name, action_type, notes, changed_by, changed_by_name)
+       VALUES ($1,$2,$3,$4,'line_assigned',$5,$6,$7)`,
+      [id, l.rows[0].phone_number, employeeId, e.rows[0].full_name,
+       [l.rows[0].operator, l.rows[0].plan].filter(Boolean).join(' · ') || '',
+       by, byName]
+    );
     return mapRow(upd.rows[0]);
   });
 }
 
 async function unassignLine(id, itUser) {
   if (!isUuid(id)) throw HttpError.notFound('Line not found');
-  const { rows } = await query(
-    `UPDATE mobile_lines SET current_employee_id = NULL, current_employee_name = NULL, updated_at = now()
-     WHERE id = $1 RETURNING *`, [id]
-  );
-  if (!rows[0]) throw HttpError.notFound('Line not found');
-  return mapRow(rows[0]);
+  return withTransaction(async (t) => {
+    const l = await t.query('SELECT * FROM mobile_lines WHERE id = $1 FOR UPDATE', [id]);
+    if (!l.rows[0]) throw HttpError.notFound('Line not found');
+    const row = l.rows[0];
+    if (!row.current_employee_id) throw HttpError.conflict('Line is not assigned');
+    const upd = await t.query(
+      `UPDATE mobile_lines SET current_employee_id = NULL, current_employee_name = NULL, updated_at = now()
+       WHERE id = $1 RETURNING *`, [id]
+    );
+    const by = itUser && (itUser.uid || itUser.id) || null;
+    const byName = (itUser && (itUser.username || itUser.email)) || 'IT';
+    await t.query(
+      `INSERT INTO mobile_line_history
+         (line_id, phone_number, employee_id, employee_name, action_type, notes, changed_by, changed_by_name)
+       VALUES ($1,$2,$3,$4,'line_unassigned',$5,$6,$7)`,
+      [id, row.phone_number, row.current_employee_id, row.current_employee_name,
+       [row.operator, row.plan].filter(Boolean).join(' · ') || '',
+       by, byName]
+    );
+    return mapRow(upd.rows[0]);
+  });
 }
 
-module.exports = { listLines, createLine, updateLine, assignLine, unassignLine };
+/** Assign / take-back events for one employee (employee history timeline). */
+async function listLineHistoryForEmployee(employeeId, limit = 100) {
+  if (!isUuid(employeeId)) return [];
+  const { rows } = await query(
+    `SELECT * FROM mobile_line_history WHERE employee_id = $1
+     ORDER BY "timestamp" DESC LIMIT $2`,
+    [employeeId, Math.min(Number(limit) || 100, 500)]
+  );
+  return mapRows(rows);
+}
+
+module.exports = { listLines, createLine, updateLine, assignLine, unassignLine, listLineHistoryForEmployee };

@@ -1,3 +1,106 @@
+/** Visual design themes for the zimmet / handover form.
+ *  Chosen during onboarding & Settings — drives CSS class + PDF colors. */
+const HANDOVER_DESIGNS = {
+  terminal: {
+    id: 'terminal',
+    name: 'Terminal Protocol',
+    desc: 'Dark navy header, violet accents — modern IT look',
+    swatches: ['#131b2e', '#3525cd', '#e2dfff'],
+    pdf: {
+      header: '#131b2e',
+      headerText: '#ffffff',
+      headerMuted: '#c3c0ff',
+      headerSoft: '#e2dfff',
+      accent: '#3525cd',
+      sectionBg: '#e2dfff',
+      tableHead: '#f5f2ff',
+      rowAlt: '#faf9fc',
+      border: '#c7c4d8',
+      rule: '#e4e1ee',
+      text: '#1b1b24',
+      muted: '#777587',
+      body: '#464555',
+      metaBg: '#ffffff',
+      logoBg: '#ffffff',
+    },
+  },
+  classic: {
+    id: 'classic',
+    name: 'Classic Formal',
+    desc: 'Black & white corporate document — formal print look',
+    swatches: ['#111111', '#ffffff', '#e8e8e8'],
+    pdf: {
+      header: '#111111',
+      headerText: '#ffffff',
+      headerMuted: '#cccccc',
+      headerSoft: '#eeeeee',
+      accent: '#111111',
+      sectionBg: '#eeeeee',
+      tableHead: '#f3f3f3',
+      rowAlt: '#fafafa',
+      border: '#999999',
+      rule: '#dddddd',
+      text: '#111111',
+      muted: '#666666',
+      body: '#333333',
+      metaBg: '#ffffff',
+      logoBg: '#ffffff',
+    },
+  },
+  corporate: {
+    id: 'corporate',
+    name: 'Corporate Blue',
+    desc: 'Steel-blue header and calm blue accents',
+    swatches: ['#1e3a5f', '#2b6cb0', '#ebf4ff'],
+    pdf: {
+      header: '#1e3a5f',
+      headerText: '#ffffff',
+      headerMuted: '#a8c5e2',
+      headerSoft: '#d6e6f5',
+      accent: '#2b6cb0',
+      sectionBg: '#d6e6f5',
+      tableHead: '#ebf4ff',
+      rowAlt: '#f7fafc',
+      border: '#a0aec0',
+      rule: '#e2e8f0',
+      text: '#1a202c',
+      muted: '#718096',
+      body: '#4a5568',
+      metaBg: '#ffffff',
+      logoBg: '#ffffff',
+    },
+  },
+  slate: {
+    id: 'slate',
+    name: 'Slate Teal',
+    desc: 'Teal accents on a soft slate header',
+    swatches: ['#1a2e2a', '#0d9488', '#ccfbf1'],
+    pdf: {
+      header: '#1a2e2a',
+      headerText: '#ffffff',
+      headerMuted: '#99f6e4',
+      headerSoft: '#ccfbf1',
+      accent: '#0f766e',
+      sectionBg: '#ccfbf1',
+      tableHead: '#f0fdfa',
+      rowAlt: '#f8fffe',
+      border: '#99a8a5',
+      rule: '#dce5e3',
+      text: '#134e4a',
+      muted: '#5f736f',
+      body: '#3f4f4c',
+      metaBg: '#ffffff',
+      logoBg: '#ffffff',
+    },
+  },
+};
+
+const HANDOVER_DESIGN_IDS = Object.keys(HANDOVER_DESIGNS);
+
+function resolveHandoverDesign(id) {
+  return HANDOVER_DESIGNS[id] || HANDOVER_DESIGNS.terminal;
+}
+
 /** Default bilingual terms text for the handover form (Zimmet Tutanağı).
  *  Editable per-instance via Settings; paragraphs are separated by blank lines. */
 const DEFAULT_HANDOVER_TERMS = `I acknowledge receipt of the equipment listed above in good working condition. I understand that this equipment is the property of the company and is provided to me solely for business use. I agree to take reasonable care of these assets, follow all corporate security policies, and return them immediately upon request or termination of employment. In the event of loss, theft, or damage due to negligence, I may be held responsible for the replacement or repair costs.
@@ -41,31 +144,47 @@ const DEFAULT_DEPARTMENTS = [
   'Operasyon',
 ];
 
-/** Default Zimmet Tutanağı (handover form) template — every field is
- *  customizable from Settings → "Customize Zimmet Template". Honored by both the
- *  on-screen print (printHandover) and the server-generated PDF (handoverPdf). */
+/** Default Zimmet Tutanağı (handover form) template — field visibility + design. */
 const DEFAULT_HANDOVER_TEMPLATE = {
-  titleEn: 'ASSET HANDOVER FORM',
-  titleTr: 'ZİMMET TUTANAĞI',
-  subtitle: 'IT Asset Control Pro — Asset Management',
+  design: 'terminal',
+  titleEn: 'Asset Handover',
+  titleTr: 'Zimmet Belgesi',
+  subtitle: 'Corporate Resource Management',
   showLogo: true,
-  // employee info fields (full name is always shown)
   showEmployeeId: true,
   showDepartment: true,
   showTitle: true,
-  // equipment table columns (No + Brand/Model are always shown)
   colCategory: true,
   colSerial: true,
-  colMac: true,
+  colMac: false,
   colCondition: true,
-  // sections
   showTerms: true,
-  showReturnSection: true,
-  // signature labels
-  deliveredByLabel: 'Delivered By (IT Department)',
-  receivedByLabel: 'Received By (Employee)',
-  // optional footer line printed under the form
+  showReturnSection: false,
+  deliveredByLabel: '',
+  receivedByLabel: '',
   footerNote: '',
 };
 
-module.exports = { DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS, DEFAULT_HANDOVER_TEMPLATE, DEFAULT_DEPARTMENTS };
+/** One named template per visual design (seed / onboarding). */
+const DEFAULT_HANDOVER_TEMPLATES = HANDOVER_DESIGN_IDS.map((id) => ({
+  id,
+  name: HANDOVER_DESIGNS[id].name,
+  ...DEFAULT_HANDOVER_TEMPLATE,
+  design: id,
+}));
+
+const MAX_HANDOVER_TEMPLATES = 12;
+
+module.exports = {
+  DEFAULT_HANDOVER_TERMS,
+  DEFAULT_LIFECYCLES,
+  DEFAULT_LOCATIONS,
+  DEFAULT_SPEC_OPTIONS,
+  DEFAULT_HANDOVER_TEMPLATE,
+  DEFAULT_HANDOVER_TEMPLATES,
+  MAX_HANDOVER_TEMPLATES,
+  DEFAULT_DEPARTMENTS,
+  HANDOVER_DESIGNS,
+  HANDOVER_DESIGN_IDS,
+  resolveHandoverDesign,
+};

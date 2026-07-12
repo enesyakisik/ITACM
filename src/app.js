@@ -13,13 +13,15 @@ function createApp() {
   app.set('trust proxy', 1); // correct req.ip behind reverse proxies
 
   // Baseline security headers (no external dependency needed). CSP allows
-  // only our own code plus Google Fonts.
+  // only our own code plus Google Fonts. blob: is required so authenticated
+  // document previews (PDF iframe / image) can render from createObjectURL.
   const CSP = [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     'font-src https://fonts.gstatic.com',
-    "img-src 'self' data:",
+    "img-src 'self' data: blob:",
+    "frame-src 'self' blob:",
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",

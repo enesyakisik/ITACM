@@ -42,10 +42,34 @@ async function expectedAssets(location) {
   let where = `status <> 'Scrap'`;
   if (location) { params.push(location); where += ` AND location = $1`; }
   const { rows } = await query(
-    `SELECT id, asset_tag, brand, model, category, status, location, current_employee_name
+    `SELECT id, asset_tag, brand, model, category, status, location,
+            current_employee_name, serial_number
      FROM assets WHERE ${where} ORDER BY asset_tag`, params
   );
   return rows;
+}
+
+/** Snapshot fields stored in the closed-count summary JSON. */
+function toSummaryAsset(a) {
+  return {
+    assetTag: a.asset_tag,
+    brand: a.brand,
+    model: a.model,
+    category: a.category,
+    status: a.status,
+    location: a.location,
+    holder: a.current_employee_name || null,
+    serialNumber: a.serial_number || null,
+  };
+}
+
+/** Older closed counts only stored a found *count* — rebuild the device list. */
+function ensureFoundDevices(summary, expected, scans) {
+  const s = summary && typeof summary === 'object' ? { ...summary } : {};
+  if (Array.isArray(s.foundDevices)) return s;
+  const scannedIds = new Set(scans.filter((x) => x.assetId).map((x) => x.assetId));
+  s.foundDevices = expected.filter((a) => scannedIds.has(a.id)).map(toSummaryAsset);
+  return s;
 }
 
 async function getCount(id) {
@@ -60,6 +84,9 @@ async function getCount(id) {
   count.scans = mapRows(scans.rows);
   count.expectedTotal = expected.length;
   count.matchedTotal = count.scans.filter((s) => s.matched).length;
+  if (count.status === 'closed' && count.summary) {
+    count.summary = ensureFoundDevices(count.summary, expected, count.scans);
+  }
   return count;
 }
 
@@ -113,15 +140,14 @@ async function closeCount(id, itUser) {
   const scans = mapRows(scansRes.rows);
   const scannedIds = new Set(scans.filter((s) => s.assetId).map((s) => s.assetId));
 
-  const missing = expected.filter((a) => !scannedIds.has(a.id)).map((a) => ({
-    assetTag: a.asset_tag, brand: a.brand, model: a.model, category: a.category,
-    status: a.status, location: a.location, holder: a.current_employee_name,
-  }));
+  const foundDevices = expected.filter((a) => scannedIds.has(a.id)).map(toSummaryAsset);
+  const missing = expected.filter((a) => !scannedIds.has(a.id)).map(toSummaryAsset);
   const unexpected = scans.filter((s) => !s.matched).map((s) => s.raw);
 
   const summary = {
     expected: expected.length,
-    found: scannedIds.size,
+    found: foundDevices.length,
+    foundDevices,
     missing,
     missingCount: missing.length,
     unexpected,

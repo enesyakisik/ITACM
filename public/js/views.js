@@ -1136,14 +1136,21 @@ async function showEmployeeDetail(emp) {
   const assets = assetsRes.items;
   const software = allSoftware.filter((s) => !s.revokedAt); // active only, for the overview
 
-  // Merge device events + software assign/revoke events into one activity timeline.
+  // Merge device + software + mobile-line events into one activity timeline.
   const swEvents = [];
   allSoftware.forEach((s) => {
     swEvents.push({ ts: s.assignedAt, type: 'software_assigned', label: s.softwareName, by: s.assignedByName, kind: 'software' });
     if (s.revokedAt) swEvents.push({ ts: s.revokedAt, type: 'software_revoked', label: s.softwareName, by: s.revokedByName || '', kind: 'software' });
   });
   const timeline = [
-    ...history.map((h) => ({ ts: h.timestamp, type: h.actionType, label: h.assetTag, by: h.changedByName, notes: h.notes, kind: 'device' })),
+    ...history.map((h) => ({
+      ts: h.timestamp,
+      type: h.actionType,
+      label: h.label || h.assetTag,
+      by: h.changedByName,
+      notes: h.notes,
+      kind: h.kind || 'device',
+    })),
     ...swEvents,
   ].sort((a, b) => new Date(b.ts) - new Date(a.ts));
   const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
@@ -1242,18 +1249,20 @@ async function showEmployeeDetail(emp) {
 
       </div>
       <div id="tab-history" class="hidden">
-        <div class="cell-sub" style="margin-bottom:10px">Everything this employee held — device assignments, returns, repairs and software zimmet.</div>
-        ${timeline.length === 0 ? '<div class="table-empty">No activity yet.</div>' :
+        <div class="cell-sub" style="margin-bottom:10px">${esc(t('emp.historyHint'))}</div>
+        ${timeline.length === 0 ? `<div class="table-empty">${esc(t('emp.noHistory'))}</div>` :
           `<div style="max-height:340px;overflow-y:auto">` +
-          timeline.map((t) => `
+          timeline.map((ev) => `
           <div class="history-item" style="flex-wrap:wrap">
-            <span class="when">${fmtDateTime(t.ts)}</span>
-            <span>${t.kind === 'software'
-              ? `<span class="pill ${t.type === 'software_revoked' ? 'pill-rose' : 'pill-indigo'}"><span class="ms ms-sm">vpn_key</span> ${t.type === 'software_revoked' ? 'Software revoked' : 'Software assigned'}</span>`
-              : badge(t.type)}</span>
-            <span class="mono">${esc(t.label)}</span>
-            <span class="cell-sub">by ${esc(t.by || '—')}</span>
-            ${t.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(t.notes)}</span>` : ''}
+            <span class="when">${fmtDateTime(ev.ts)}</span>
+            <span>${ev.kind === 'software'
+              ? `<span class="pill ${ev.type === 'software_revoked' ? 'pill-rose' : 'pill-indigo'}"><span class="ms ms-sm">vpn_key</span> ${esc(ev.type === 'software_revoked' ? t('emp.swRevoked') : t('emp.swAssigned'))}</span>`
+              : ev.kind === 'line'
+                ? `<span class="pill ${ev.type === 'line_unassigned' ? 'pill-rose' : 'pill-blue'}"><span class="ms ms-sm">sim_card</span> ${esc(ev.type === 'line_unassigned' ? t('emp.lineReturned') : t('emp.lineAssigned'))}</span>`
+                : badge(ev.type)}</span>
+            <span class="mono">${esc(ev.label)}</span>
+            <span class="cell-sub">by ${esc(ev.by || '—')}</span>
+            ${ev.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(ev.notes)}</span>` : ''}
           </div>`).join('') + '</div>'}
       </div>
 
@@ -1442,24 +1451,36 @@ async function showEmployeeDetail(emp) {
       overlay.querySelectorAll('[data-reprint]').forEach((b) => b.addEventListener('click', async () => {
         printHandover(await api('/handovers/' + b.dataset.reprint));
       }));
-      // Regenerate a fresh Zimmet Tutanağı covering everything currently assigned.
+      // Regenerate a fresh Zimmet Tutanağı covering everything currently assigned
+      // (devices + mobile lines).
       const cur = $('#emp-print-current', overlay);
       if (cur) cur.addEventListener('click', () => {
+        const assetItems = assets.map((a) => ({
+          kind: 'asset',
+          assetTag: a.assetTag,
+          brand: a.brand,
+          model: a.model,
+          category: a.category,
+          serialNumber: a.serialNumber,
+          macAddress: a.macEthernet || a.macWifi || null,
+          conditionNote: 'In use / Kullanımda',
+        }));
+        const lineItems = (lines || []).map((l) => ({
+          kind: 'line',
+          lineId: l.id,
+          phoneNumber: l.phoneNumber,
+          operator: l.operator,
+          plan: l.plan,
+          simSerial: l.simSerial,
+          conditionNote: 'In use / Kullanımda',
+        }));
         printHandover({
           id: emp.id,
           employeeId: emp.id,
           employeeName: emp.fullName,
           transactionDate: new Date().toISOString(),
           documentType: 'single',
-          items: assets.map((a) => ({
-            assetTag: a.assetTag,
-            brand: a.brand,
-            model: a.model,
-            category: a.category,
-            serialNumber: a.serialNumber,
-            macAddress: a.macEthernet || a.macWifi || null,
-            conditionNote: 'In use / Kullanımda',
-          })),
+          items: [...assetItems, ...lineItems],
         });
       });
     },
@@ -1500,21 +1521,23 @@ Views.handover = async function (el) {
   let empList = initialEmps; // current employee search results (fetched server-side)
   let stock = [];
   let stockTotal = 0;
+  let freeLines = [];
   const basket = new Map(); // assetId -> { asset, note }
+  const lineBasket = new Map(); // lineId -> { line, note }
   // empObj holds the SELECTED employee object so it survives a new search that
   // no longer contains them.
-  const state = { emp: null, empObj: null, hwFilter: '', docType: 'single' };
+  const state = { emp: null, empObj: null, hwFilter: '', lineFilter: '', docType: 'single' };
 
   /* ---- static shell: rendered ONCE so search inputs never lose focus ---- */
   el.innerHTML = `
-    ${pageHead('Handover Operations', 'Assign hardware to employees and generate handover protocols.',
+    ${pageHead(t('page.handover.title'), t('page.handover.sub'),
       '<span class="draft-chip">Draft Mode</span>')}
     <div class="ho-grid">
       <div>
         <div class="card card-pad" style="margin-bottom:20px">
-          <div class="section-title" style="margin-bottom:14px"><span class="ms">person_search</span> Select Employee</div>
+          <div class="section-title" style="margin-bottom:14px"><span class="ms">person_search</span> ${esc(t('handover.selectEmployee'))}</div>
           <div class="search-box" style="margin-bottom:14px"><span class="ms">search</span>
-            <input type="search" id="ho-emp-search" placeholder="Search by name, email, or department…"></div>
+            <input type="search" id="ho-emp-search" placeholder="${esc(t('handover.searchEmployee'))}"></div>
           <div id="ho-emp-list" style="max-height:320px;overflow-y:auto"></div>
         </div>
 
@@ -1522,22 +1545,40 @@ Views.handover = async function (el) {
           <div class="card-pad" style="padding-bottom:10px">
             <div class="section-title" style="justify-content:space-between">
               <span style="display:flex;align-items:center;gap:10px"><span class="ms">devices</span>
-                <span id="ho-stock-count">Available Hardware</span></span>
+                <span id="ho-stock-count">${esc(t('handover.availableHardware'))}</span></span>
               <span class="stock-chip">In Stock Only</span>
             </div>
           </div>
           <div style="padding:0 20px 12px">
             <div class="search-box"><span class="ms">search</span>
-              <input type="search" id="ho-hw-search" placeholder="Search all in-stock assets (tag, serial, brand, model)…"></div>
+              <input type="search" id="ho-hw-search" placeholder="${esc(t('handover.searchHardware'))}"></div>
           </div>
-          <div class="table-wrap" style="max-height:360px;overflow-y:auto"><table class="data">
+          <div class="table-wrap" style="max-height:280px;overflow-y:auto"><table class="data">
             <thead><tr><th style="width:34px"></th><th>Asset Name</th><th>Tag / SN</th><th style="text-align:right">Category</th></tr></thead>
             <tbody id="ho-stock-body"></tbody>
           </table></div>
         </div>
 
         <div class="card" style="margin-top:20px">
-          <div class="card-head"><h3>Recent Handover Receipts</h3></div>
+          <div class="card-pad" style="padding-bottom:10px">
+            <div class="section-title" style="justify-content:space-between">
+              <span style="display:flex;align-items:center;gap:10px"><span class="ms">sim_card</span>
+                <span id="ho-line-count">${esc(t('handover.availableLines'))}</span></span>
+              <span class="stock-chip">${esc(t('handover.unassignedOnly'))}</span>
+            </div>
+          </div>
+          <div style="padding:0 20px 12px">
+            <div class="search-box"><span class="ms">search</span>
+              <input type="search" id="ho-line-search" placeholder="${esc(t('handover.searchLines'))}"></div>
+          </div>
+          <div class="table-wrap" style="max-height:220px;overflow-y:auto"><table class="data">
+            <thead><tr><th style="width:34px"></th><th>${esc(t('lines.phone'))}</th><th>${esc(t('lines.operator'))}</th><th>${esc(t('lines.plan'))}</th></tr></thead>
+            <tbody id="ho-line-body"></tbody>
+          </table></div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-head"><h3>${esc(t('handover.recentReceipts'))}</h3></div>
           <div class="table-wrap"><table class="data">
             <thead><tr><th>Employee</th><th>Items</th><th>Date</th><th>Type</th><th style="text-align:right"></th></tr></thead>
             <tbody>
@@ -1557,7 +1598,7 @@ Views.handover = async function (el) {
         <div class="basket-head">
           <span class="ms ms-lg">shopping_basket</span>
           <div class="grow">
-            <h3>Handover Basket</h3>
+            <h3>${esc(t('handover.basket'))}</h3>
             <p id="ho-basket-sub">0 items selected</p>
           </div>
           <span class="basket-count" id="ho-basket-count">0</span>
@@ -1565,6 +1606,9 @@ Views.handover = async function (el) {
         <div class="basket-body" id="ho-basket-items"></div>
         <div class="doc-gen">
           <h4>Document Generation</h4>
+          ${typeof handoverTplSelectHtml === 'function' ? handoverTplSelectHtml(
+            (AppConfig.handoverTemplates && AppConfig.handoverTemplates[0] && AppConfig.handoverTemplates[0].id) || 'default'
+          ) : ''}
           <label class="doc-option">
             <input type="radio" name="doctype" value="single" checked>
             <span><strong>Single Unified Document</strong>
@@ -1573,7 +1617,7 @@ Views.handover = async function (el) {
           <label class="doc-option">
             <input type="radio" name="doctype" value="separate">
             <span><strong>Separate Documents</strong>
-              <span class="cell-sub">Generates individual protocols per asset.</span></span>
+              <span class="cell-sub">Generates individual protocols per asset / line.</span></span>
           </label>
         </div>
         <div class="basket-foot">
@@ -1587,6 +1631,8 @@ Views.handover = async function (el) {
     </div>`;
 
   /* ---- partial renderers ---- */
+  function basketTotal() { return basket.size + lineBasket.size; }
+
   function renderEmps() {
     const list = $('#ho-emp-list', el);
     list.innerHTML = (empList.length === 0 ? '<div class="table-empty">No matching employees.</div>' :
@@ -1628,8 +1674,16 @@ Views.handover = async function (el) {
     renderStock();
   }
 
+  async function loadLines() {
+    const q = new URLSearchParams({ status: 'Active', limit: '500' });
+    if (state.lineFilter) q.set('search', state.lineFilter);
+    const all = await api('/lines?' + q.toString()).catch(() => []);
+    freeLines = all.filter((l) => !l.currentEmployeeId);
+    renderLines();
+  }
+
   function renderStock() {
-    $('#ho-stock-count', el).textContent = `Available Hardware (${stockTotal})`;
+    $('#ho-stock-count', el).textContent = `${t('handover.availableHardware')} (${stockTotal})`;
     const rows = stock.slice(0, 200);
     const tbody = $('#ho-stock-body', el);
     tbody.innerHTML = (rows.length === 0
@@ -1653,6 +1707,28 @@ Views.handover = async function (el) {
     }));
   }
 
+  function renderLines() {
+    $('#ho-line-count', el).textContent = `${t('handover.availableLines')} (${freeLines.length})`;
+    const tbody = $('#ho-line-body', el);
+    tbody.innerHTML = freeLines.length === 0
+      ? `<tr><td colspan="4" class="table-empty">${esc(t('handover.noFreeLines'))}</td></tr>`
+      : freeLines.map((l) => `
+        <tr class="hw-row" data-line="${esc(l.id)}">
+          <td><input type="checkbox" ${lineBasket.has(l.id) ? 'checked' : ''} ${!canDo ? 'disabled' : ''}></td>
+          <td class="mono cell-title">${esc(l.phoneNumber)}</td>
+          <td>${esc(l.operator || '—')}</td>
+          <td class="cell-sub">${esc(l.plan || '—')}</td>
+        </tr>`).join('');
+    tbody.querySelectorAll('[data-line]').forEach((r) => r.addEventListener('click', () => {
+      if (!canDo) return;
+      const id = r.dataset.line;
+      if (lineBasket.has(id)) lineBasket.delete(id);
+      else lineBasket.set(id, { line: freeLines.find((x) => x.id === id), note: '' });
+      r.querySelector('input').checked = lineBasket.has(id);
+      renderBasket();
+    }));
+  }
+
   function renderSelEmp() {
     const box = $('#ho-sel-emp', el);
     const p = state.empObj;
@@ -1660,7 +1736,7 @@ Views.handover = async function (el) {
       box.innerHTML = `
         <div class="card card-pad" style="border-style:dashed;text-align:center;color:var(--outline);padding:22px">
           <span class="ms" style="font-size:30px">person_search</span>
-          <div style="margin-top:6px;font-size:13px">Select an employee from the left to start the handover.</div>
+          <div style="margin-top:6px;font-size:13px">${esc(t('handover.pickEmployeeHint'))}</div>
         </div>`;
       return;
     }
@@ -1691,14 +1767,17 @@ Views.handover = async function (el) {
 
   function renderBasket() {
     const selEmp = state.empObj;
+    const total = basketTotal();
     $('#ho-basket-sub', el).textContent =
-      `${basket.size} item${basket.size === 1 ? '' : 's'} selected${selEmp ? ' for ' + selEmp.fullName : ''}`;
-    $('#ho-basket-count', el).textContent = basket.size;
+      `${total} item${total === 1 ? '' : 's'} selected${selEmp ? ' for ' + selEmp.fullName : ''}`
+      + (lineBasket.size ? ` · ${lineBasket.size} ${t('handover.lines').toLowerCase()}` : '');
+    $('#ho-basket-count', el).textContent = total;
 
     const body = $('#ho-basket-items', el);
-    body.innerHTML = basket.size === 0
-      ? '<div class="table-empty">Select assets from Available Hardware.</div>'
-      : [...basket.values()].map(({ asset, note }) => `
+    if (total === 0) {
+      body.innerHTML = `<div class="table-empty">${esc(t('handover.basketEmpty'))}</div>`;
+    } else {
+      const assetBlocks = [...basket.values()].map(({ asset, note }) => `
         <div class="basket-item">
           <div class="basket-item-top">
             <span class="icon-chip"><span class="ms">${catIcon(asset.category)}</span></span>
@@ -1710,18 +1789,41 @@ Views.handover = async function (el) {
           </div>
           <div class="basket-note-label">Delivery Condition Note</div>
           <input data-note="${esc(asset.id)}" placeholder="Optional condition note…" value="${esc(note)}">
-        </div>`).join('');
+        </div>`);
+      const lineBlocks = [...lineBasket.values()].map(({ line, note }) => `
+        <div class="basket-item">
+          <div class="basket-item-top">
+            <span class="icon-chip"><span class="ms">sim_card</span></span>
+            <div class="grow">
+              <strong class="mono">${esc(line.phoneNumber)}</strong>
+              <span class="cell-sub">${esc(line.operator || '—')}${line.plan ? ' · ' + esc(line.plan) : ''}</span>
+            </div>
+            <button class="icon-btn" data-remove-line="${esc(line.id)}" title="Remove"><span class="ms">close</span></button>
+          </div>
+          <div class="basket-note-label">${esc(t('handover.lineNote'))}</div>
+          <input data-line-note="${esc(line.id)}" placeholder="${esc(t('handover.lineNotePh'))}" value="${esc(note)}">
+        </div>`);
+      body.innerHTML = assetBlocks.join('') + lineBlocks.join('');
+    }
 
     body.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
       basket.delete(b.dataset.remove);
       renderStock();
       renderBasket();
     }));
+    body.querySelectorAll('[data-remove-line]').forEach((b) => b.addEventListener('click', () => {
+      lineBasket.delete(b.dataset.removeLine);
+      renderLines();
+      renderBasket();
+    }));
     body.querySelectorAll('[data-note]').forEach((i) => i.addEventListener('change', () => {
       basket.get(i.dataset.note).note = i.value;
     }));
+    body.querySelectorAll('[data-line-note]').forEach((i) => i.addEventListener('change', () => {
+      lineBasket.get(i.dataset.lineNote).note = i.value;
+    }));
 
-    $('#ho-submit', el).disabled = !canDo || basket.size === 0 || !state.emp;
+    $('#ho-submit', el).disabled = !canDo || total === 0 || !state.emp;
   }
 
   /* ---- static bindings (attached once — inputs keep focus while typing) ---- */
@@ -1736,6 +1838,12 @@ Views.handover = async function (el) {
     clearTimeout(hwTimer);
     hwTimer = setTimeout(() => loadStock().catch((err) => toast(err.message, 'error')), 300);
   });
+  let lineTimer;
+  $('#ho-line-search', el).addEventListener('input', (e) => {
+    state.lineFilter = e.target.value.trim();
+    clearTimeout(lineTimer);
+    lineTimer = setTimeout(() => loadLines().catch((err) => toast(err.message, 'error')), 300);
+  });
   el.querySelectorAll('input[name="doctype"]').forEach((r) => r.addEventListener('change', () => {
     state.docType = r.value;
   }));
@@ -1744,17 +1852,23 @@ Views.handover = async function (el) {
   }));
   $('#ho-submit', el).addEventListener('click', async () => {
     const items = [...basket.values()].map(({ asset, note }) => ({ assetId: asset.id, conditionNote: note }));
+    const lines = [...lineBasket.values()].map(({ line, note }) => ({ lineId: line.id, conditionNote: note }));
+    const tplSel = $('#ho-tpl-select', el);
+    const templateId = tplSel ? tplSel.value : null;
     try {
       const receipt = await api('/handovers', {
         method: 'POST',
-        body: { employeeId: state.emp, documentType: state.docType, items },
+        body: { employeeId: state.emp, documentType: state.docType, items, lines, templateId },
       });
-      toast(`Handover recorded — ${receipt.itemCount} asset(s) assigned to ${receipt.employee.fullName}`, 'success');
+      const bits = [];
+      if (receipt.assetCount) bits.push(`${receipt.assetCount} asset(s)`);
+      if (receipt.lineCount) bits.push(`${receipt.lineCount} line(s)`);
+      toast(`Handover recorded — ${bits.join(' + ') || receipt.itemCount + ' item(s)'} → ${receipt.employee.fullName}`, 'success');
       const full = await api('/handovers/' + receipt.handoverId);
       printHandover(full);
       Views.handover(el); // reload lists
     } catch (err) {
-      const detail = err.details ? ' — ' + err.details.map((d) => `${d.assetTag || d.assetId}: ${d.reason}`).join('; ') : '';
+      const detail = err.details ? ' — ' + err.details.map((d) => `${d.assetTag || d.phoneNumber || d.assetId || d.lineId}: ${d.reason}`).join('; ') : '';
       toast(err.message + detail, 'error');
     }
   });
@@ -1762,7 +1876,7 @@ Views.handover = async function (el) {
   renderEmps();
   renderSelEmp();
   renderBasket();
-  await loadStock();
+  await Promise.all([loadStock(), loadLines()]);
 };
 
 /* Printable receipt — matches the print_preview_handover_form mockup */
@@ -1771,119 +1885,222 @@ Views.handover = async function (el) {
 // height, then shrunk via `zoom` (which — unlike transform — reflows layout, so
 // page-break-after actually lands one form per sheet).
 function fitReceiptsToOnePage() {
-  const PRINT_W = 718; // A4 (794px @96dpi) minus 10mm margins each side
-  const PRINT_H = 1000; // A4 usable height @10mm margins, minus safety headroom
+  // A4 @96dpi ≈ 794×1123; keep modest margins so zoom stays readable.
+  const PRINT_W = 720;
+  const PRINT_H = 1040;
   const pr = $('#print-root');
   const restore = pr.getAttribute('style') || '';
   pr.setAttribute('style', 'display:block;position:fixed;left:-10000px;top:0;width:' + PRINT_W + 'px');
   pr.querySelectorAll('.receipt').forEach((r) => {
     r.style.zoom = '';
+    r.style.transform = '';
+    r.style.transformOrigin = '';
+    r.style.width = '';
     const h = r.scrollHeight;
-    if (h > PRINT_H) r.style.zoom = (PRINT_H / h).toFixed(4);
+    if (h > PRINT_H) {
+      // Chrome print honors `zoom` and keeps layout box correct for page breaks.
+      // Do not also set transform:scale — that would double-shrink.
+      const z = Math.max(0.72, PRINT_H / h);
+      r.style.zoom = z.toFixed(4);
+    }
   });
-  pr.setAttribute('style', restore); // container back to normal; zoom stays on receipts
+  pr.setAttribute('style', restore);
 }
 
-/* One Zimmet Tutanağı receipt as HTML — honors the customizable template (tpl).
-   Shared by the on-screen print (printHandover) and the template customizer preview. */
+/* One Zimmet Belgesi receipt as HTML — Stitch "Terminal Protocol" layout.
+   Labels follow the active UI language (i18n). Shared by print + template preview. */
 function handoverReceiptHTML(ctx, tpl) {
-  const infoField = (label, value) => `<div class="f"><small>${esc(label)}</small><div>${esc(value || '—')}</div></div>`;
-  const empFields = [infoField('Full Name / Ad Soyad', ctx.employeeName)];
-  if (tpl.showEmployeeId) empFields.push(infoField('Employee ID / Sicil No', ctx.employeeId));
-  if (tpl.showDepartment) empFields.push(infoField('Department / Departman', ctx.department));
-  if (tpl.showTitle) empFields.push(infoField('Position / Ünvan', ctx.title));
+  const lang = (typeof i18nLang === 'function' && i18nLang()) || 'en';
+  const title = (lang === 'tr' && tpl.titleTr) ? tpl.titleTr
+    : (lang === 'en' && tpl.titleEn) ? tpl.titleEn
+      : (tpl.titleEn || tpl.titleTr || t('handover.title'));
+  const subtitle = tpl.subtitle || t('handover.subtitle');
 
-  const cols = [{ h: 'No', w: 'width:24pt', cell: (i, idx) => idx + 1 }];
-  if (tpl.colCategory) cols.push({ h: 'Category', cell: (i) => esc(i.category || '—') });
-  cols.push({ h: 'Brand / Model', cell: (i) => `${esc(i.brand)} ${esc(i.model)}` });
-  if (tpl.colSerial) cols.push({ h: 'Serial Number', cls: 'mono', cell: (i) => esc(i.serialNumber) });
-  if (tpl.colMac) cols.push({ h: 'MAC Address', cls: 'mono', cell: (i) => esc(i.macAddress || 'N/A') });
-  if (tpl.colCondition) cols.push({ h: 'Condition', cell: (i) => esc(i.conditionNote || 'New') });
-  const thead = `<tr>${cols.map((c) => `<th${c.w ? ` style="${c.w}"` : ''}>${esc(c.h)}</th>`).join('')}</tr>`;
-  const bodyRows = (ctx.items || []).map((i, idx) =>
+  const infoField = (label, value, accent) => `
+    <div class="f">
+      <small>${esc(label)}</small>
+      <div${accent ? ' class="accent"' : ''}>${esc(value || '—')}</div>
+    </div>`;
+  const empFields = [infoField(t('handover.fullName'), ctx.employeeName)];
+  if (tpl.showEmployeeId) empFields.push(infoField(t('handover.employeeId'), ctx.employeeId, true));
+  if (tpl.showDepartment) empFields.push(infoField(t('handover.department'), ctx.department));
+  if (tpl.showTitle) empFields.push(infoField(t('handover.position'), ctx.title));
+
+  // Column widths always sum to 100% so the table fills the card (no empty right void).
+  // Keep MODEL from stealing space when MAC/CONDITION are on (avoids a hollow gap before SERIAL).
+  const cols = [{ h: t('handover.colNo'), weight: 0.06, cell: (i, idx) => idx + 1 }];
+  if (tpl.colCategory) cols.push({ h: t('handover.colCategory'), weight: 0.14, cell: (i) => esc(i.category || '—') });
+  cols.push({
+    h: t('handover.colModel'),
+    weight: (tpl.colMac && tpl.colCondition) ? 0.22 : (tpl.colMac || tpl.colCondition) ? 0.28 : 0.36,
+    cell: (i) => `${esc(i.brand)} ${esc(i.model)}`,
+  });
+  if (tpl.colSerial) cols.push({ h: t('handover.colSerial'), weight: 0.20, cls: 'mono', cell: (i) => esc(i.serialNumber) });
+  if (tpl.colMac) cols.push({ h: t('handover.colMac'), weight: 0.18, cls: 'mono', cell: (i) => esc(i.macAddress || 'N/A') });
+  if (tpl.colCondition) {
+    cols.push({
+      h: t('handover.colCondition'),
+      weight: 0.20,
+      cell: (i) => esc(i.conditionNote || 'New'),
+    });
+  }
+  const wSum = cols.reduce((s, c) => s + c.weight, 0);
+  cols.forEach((c) => { c.pct = (c.weight / wSum) * 100; });
+  // Fix float drift on the last column
+  const pctUsed = cols.slice(0, -1).reduce((s, c) => s + c.pct, 0);
+  cols[cols.length - 1].pct = 100 - pctUsed;
+
+  const allItems = ctx.items || [];
+  const lineItems = allItems.filter((i) => i.kind === 'line');
+  const assetItems = allItems.filter((i) => i.kind !== 'line');
+  // Legacy receipts (no kind) → all treated as assets
+  const assets = (assetItems.length || lineItems.length) ? assetItems : allItems;
+
+  const colgroup = `<colgroup>${cols.map((c) => `<col style="width:${c.pct.toFixed(2)}%">`).join('')}</colgroup>`;
+  const thead = `<tr>${cols.map((c) => `<th>${esc(c.h)}</th>`).join('')}</tr>`;
+  const bodyRows = assets.map((i, idx) =>
     `<tr>${cols.map((c) => `<td${c.cls ? ` class="${c.cls}"` : ''}>${c.cell(i, idx)}</td>`).join('')}</tr>`).join('');
-  const blankRow = `<tr>${cols.map(() => '<td>&nbsp;</td>').join('')}</tr>`;
+
+  const lineTable = lineItems.length ? `
+        <section class="r-card">
+          <div class="r-card-h"><span class="ms">sim_card</span> ${esc(t('handover.lines'))}</div>
+          <table class="r-items">
+            <colgroup>
+              <col style="width:8%"><col style="width:28%"><col style="width:18%">
+              <col style="width:22%"><col style="width:24%">
+            </colgroup>
+            <thead><tr>
+              <th>${esc(t('handover.colNo'))}</th>
+              <th>${esc(t('handover.colPhone'))}</th>
+              <th>${esc(t('handover.colOperator'))}</th>
+              <th>${esc(t('handover.colPlan'))}</th>
+              <th>${esc(t('handover.colSim'))}</th>
+            </tr></thead>
+            <tbody>
+              ${lineItems.map((i, idx) => `<tr>
+                <td>${idx + 1}</td>
+                <td class="mono">${esc(i.phoneNumber || i.model || '—')}</td>
+                <td>${esc(i.operator || i.brand || '—')}</td>
+                <td>${esc(i.plan || '—')}</td>
+                <td class="mono">${esc(i.simSerial || i.serialNumber || '—')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </section>` : '';
+
+  const assetsSection = assets.length ? `
+        <section class="r-card">
+          <div class="r-card-h"><span class="ms">devices_other</span> ${esc(t('handover.assets'))}</div>
+          <table class="r-items">
+            ${colgroup}
+            <thead>${thead}</thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </section>` : '';
+
+  const issuedLabel = t('handover.issuedBy');
+  const receivedLabel = t('handover.receivedBy');
+  const address = (ctx.companyAddress || '').trim();
+  const design = ['terminal', 'classic', 'corporate', 'slate'].includes(tpl.design)
+    ? tpl.design : 'terminal';
 
   return `
-    <div class="receipt">
-      <div class="r-head">
-        <div class="co">
+    <div class="receipt receipt-v2 design-${design}">
+      <header class="r-banner">
+        <div class="r-banner-left">
           ${tpl.showLogo ? `<div class="r-logo">${ctx.companyLogo
-            ? `<img src="${esc(ctx.companyLogo)}" style="max-width:100%;max-height:100%;object-fit:contain" alt="logo">`
+            ? `<img src="${esc(ctx.companyLogo)}" alt="logo">`
             : esc((ctx.companyName || 'A')[0].toUpperCase())}</div>` : ''}
           <div>
             <h1>${esc((ctx.companyName || 'IT ASSET CONTROL PRO').toUpperCase())}</h1>
-            ${tpl.subtitle ? `<small>${esc(tpl.subtitle)}</small>` : ''}
+            ${address ? `<div class="r-address">${esc(address)}</div>` : ''}
+            <small>${esc(subtitle)}</small>
           </div>
         </div>
-        <div class="r-title">
-          <h2>${esc(tpl.titleEn || 'ASSET HANDOVER FORM')}</h2>
-          ${tpl.titleTr ? `<div class="tr">(${esc(tpl.titleTr)})</div>` : ''}
-          <span class="mono">Form ID: ${esc(ctx.formNo)}${esc(ctx.formSuffix || '')}<br>Date: ${esc(ctx.dateStr)}</span>
+        <div class="r-banner-right">
+          <h2>${esc(title)}</h2>
+          ${t('handover.titleAlt') && t('handover.titleAlt').toLowerCase() !== String(title).toLowerCase()
+            ? `<h3>(${esc(t('handover.titleAlt'))})</h3>` : ''}
+          <div class="r-meta">
+            <span>${esc(t('handover.refId'))}</span><strong class="mono accent">${esc(ctx.formNo)}${esc(ctx.formSuffix || '')}</strong>
+            <span>${esc(t('handover.date'))}</span><strong class="mono">${esc(ctx.dateStr)}</strong>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div class="r-section">Receiving Employee Information</div>
-      <div class="r-info">${empFields.join('')}</div>
+      <div class="r-body">
+        <section class="r-card">
+          <div class="r-card-h"><span class="ms">person</span> ${esc(t('handover.assignee'))}</div>
+          <div class="r-info${empFields.length >= 3 ? ' r-info-3' : ''}">${empFields.join('')}</div>
+        </section>
 
-      <div class="r-section">Equipment Details / Ekipman Detayları</div>
-      <table class="r-items">
-        <thead>${thead}</thead>
-        <tbody>${bodyRows}${blankRow}</tbody>
-      </table>
+        ${assetsSection}
+        ${lineTable}
 
-      ${tpl.showTerms ? `<div class="r-section" style="border-bottom:none;margin-bottom:4pt">Terms and Conditions / Şartlar ve Koşullar:</div>
-      <div class="r-terms">${ctx.termsHtml || ''}</div>` : ''}
+        ${tpl.showTerms ? `<section class="r-card r-terms-card">
+          <div class="r-card-h"><span class="ms">gavel</span> ${esc(t('handover.terms'))}</div>
+          <div class="r-terms">${ctx.termsHtml || ''}</div>
+        </section>` : ''}
 
-      <div class="r-sigs">
-        <div class="sig">
-          ${esc(tpl.deliveredByLabel || 'Delivered By (IT Department)')}<br><small>Teslim Eden (BT Departmanı)</small>
-          <div class="line">${esc(ctx.deliveredByName || 'IT Department')}</div>
-          <small>IT Systems Administrator</small>
-        </div>
-        <div class="sig">
-          ${esc(tpl.receivedByLabel || 'Received By (Employee)')}<br><small>Teslim Alan (Çalışan)</small>
-          <div class="line">${esc(ctx.employeeName)}</div>
-          <small>Signature / İmza</small>
-        </div>
-      </div>
-
-      ${tpl.showReturnSection ? `<div class="r-return">
-        <div class="r-section">Equipment Return / Ekipman İadesi</div>
-        <p class="r-terms" style="margin:0 0 6pt">
-          I confirm that I returned the equipment listed above. This section is signed when the
-          equipment is handed back to the IT department.
-          <em>Yukarıda listelenen ekipmanı iade ettiğimi onaylarım. Bu bölüm, ekipman BT departmanına
-          teslim edildiğinde imzalanır.</em>
-        </p>
-        <div class="r-info" style="grid-template-columns:1fr 1fr 1fr">
-          <div class="f"><small>Return Date / İade Tarihi</small><div>&nbsp;</div></div>
-          <div class="f"><small>Condition on Return / İade Durumu</small><div>&nbsp;</div></div>
-          <div class="f"><small>Missing Items / Eksikler</small><div>&nbsp;</div></div>
-        </div>
-        <div class="r-sigs" style="margin-top:22pt">
+        <section class="r-sigs">
           <div class="sig">
-            Returned By (Employee)<br><small>İade Eden (Çalışan)</small>
-            <div class="line">${esc(ctx.employeeName)}</div>
-            <small>Signature / İmza</small>
+            <p class="sig-label">${esc(issuedLabel)} <span>${esc(t('handover.issuedByRole'))}</span></p>
+            <div class="sig-line"></div>
+            <div class="sig-foot">
+              <div>
+                <strong>${esc(ctx.deliveredByName || 'IT Department')}</strong>
+                <small>${esc(t('handover.signature'))}</small>
+              </div>
+              <div class="sig-date"><small>${esc(t('handover.date'))}:</small> <span class="sig-date-line"></span></div>
+            </div>
           </div>
           <div class="sig">
-            Received Back By (IT Department)<br><small>İade Teslim Alan (BT Departmanı)</small>
-            <div class="line">&nbsp;</div>
-            <small>Name &amp; Signature / Ad ve İmza</small>
+            <p class="sig-label">${esc(receivedLabel)} <span>${esc(t('handover.receivedByRole'))}</span></p>
+            <div class="sig-line"></div>
+            <div class="sig-foot">
+              <div>
+                <strong>${esc(ctx.employeeName)}</strong>
+                <small>${esc(t('handover.signature'))}</small>
+              </div>
+              <div class="sig-date"><small>${esc(t('handover.date'))}:</small> <span class="sig-date-line"></span></div>
+            </div>
           </div>
-        </div>
-      </div>` : ''}
+        </section>
 
-      ${tpl.footerNote ? `<p style="text-align:center;font-size:8pt;color:#555;margin-top:10pt;font-style:italic">${esc(tpl.footerNote)}</p>` : ''}
+        ${tpl.showReturnSection ? `<section class="r-card r-return">
+          <div class="r-card-h">${esc(t('handover.returnSection'))}</div>
+          <p class="r-terms">${esc(t('handover.returnBody'))}</p>
+          <div class="r-info r-info-3">
+            <div class="f"><small>${esc(t('handover.returnDate'))}</small><div>&nbsp;</div></div>
+            <div class="f"><small>${esc(t('handover.returnCondition'))}</small><div>&nbsp;</div></div>
+            <div class="f"><small>${esc(t('handover.missingItems'))}</small><div>&nbsp;</div></div>
+          </div>
+          <div class="r-sigs" style="margin-top:16px;padding:0">
+            <div class="sig">
+              <p class="sig-label">${esc(t('handover.returnedBy'))}</p>
+              <div class="sig-line"></div>
+              <strong>${esc(ctx.employeeName)}</strong>
+              <small>${esc(t('handover.signature'))}</small>
+            </div>
+            <div class="sig">
+              <p class="sig-label">${esc(t('handover.receivedBackBy'))}</p>
+              <div class="sig-line"></div>
+              <strong>&nbsp;</strong>
+              <small>${esc(t('handover.nameAndSignature'))}</small>
+            </div>
+          </div>
+        </section>` : ''}
+
+        <footer class="r-footer">
+          <p><span class="ms">verified_user</span> ${esc(tpl.footerNote || t('handover.generatedBy'))}</p>
+        </footer>
+      </div>
     </div>`;
 }
 
 async function printHandover(h) {
   let emp = null;
   try {
-    // Fetch the one employee directly so Department/Position fill in on the form
-    // regardless of company size.
     emp = await api('/employees/' + encodeURIComponent(h.employeeId)).catch(() => null);
   } catch { /* print with what we have */ }
 
@@ -1892,53 +2109,79 @@ async function printHandover(h) {
   const formNo = 'HF-' + String(h.id || '').slice(0, 8).toUpperCase();
   const dateStr = fmtDate(h.transactionDate);
 
-  // Terms come from instance settings (editable in Settings); blank line = new
-  // paragraph, paragraphs after the first render italic (the TR translation).
-  const termsHtml = String(AppConfig.handoverTerms || '')
-    .split(/\n\s*\n/)
-    .filter((p) => p.trim())
-    .map((p, i) => i === 0
-      ? `<p style="margin:0 0 6pt">${esc(p.trim())}</p>`
-      : `<em>${esc(p.trim())}</em>`)
-    .join('');
+  // Prefer localized default terms; only use Settings override when it differs
+  // from the stock bilingual default (so language switching actually works).
+  const stockDefault = `I acknowledge receipt of the equipment listed above`;
+  const stored = String(AppConfig.handoverTerms || '').trim();
+  const useCustom = stored && !stored.startsWith(stockDefault);
+  const termsHtml = useCustom
+    ? stored.split(/\n\s*\n/).filter((p) => p.trim())
+      .map((p) => `<p>${esc(p.trim())}</p>`).join('')
+    : `<p>${esc(t('handover.termsBody'))}</p>`;
 
-  const tpl = AppConfig.handoverTemplate || {};
-  $('#print-root').innerHTML = groups.map((group, gi) => handoverReceiptHTML({
+  const ctxBase = {
     companyName: AppConfig.companyName, companyLogo: AppConfig.companyLogo,
-    formNo, formSuffix: groups.length > 1 ? '-' + (gi + 1) : '', dateStr,
+    companyAddress: AppConfig.companyAddress,
+    formNo, dateStr,
+    pageTotal: groups.length,
     employeeName: h.employeeName,
     employeeId: emp ? String(emp.id).slice(0, 8).toUpperCase() : '',
     department: emp && emp.department, title: emp && emp.title,
-    // Original assigner stays on reprints; current user only if that account
-    // is disabled/deleted (or for pre-migration receipts with no stored name).
     deliveredByName: (h.itUserName && h.itUserActive !== false)
       ? h.itUserName
       : ((Auth.profile && Auth.profile.username) || h.itUserName || 'IT Department'),
-    termsHtml, items: group,
-  }, tpl)).join('');
+    termsHtml,
+  };
 
-  // On-screen print preview (matches the print_preview mockup). Calling
-  // window.print() directly can be silently blocked in embedded webviews,
-  // so the form is always shown on screen first with an explicit button.
+  let selectedTplId = h.templateId
+    || (AppConfig.handoverTemplates && AppConfig.handoverTemplates[0] && AppConfig.handoverTemplates[0].id)
+    || 'default';
+
+  function buildPrintRoot(tplId) {
+    const tpl = resolveHandoverTpl(tplId);
+    selectedTplId = tpl.id || tplId;
+    $('#print-root').innerHTML = groups.map((group, gi) => handoverReceiptHTML({
+      ...ctxBase,
+      formSuffix: groups.length > 1 ? '-' + (gi + 1) : '',
+      pageNum: gi + 1,
+      items: group,
+    }, tpl)).join('');
+  }
+
+  buildPrintRoot(selectedTplId);
+
   openModal({
-    title: 'Print Preview — Asset Handover Form',
+    title: t('handover.printPreview'),
     wide: true,
     body: `
+      ${handoverTplSelectHtml(selectedTplId)}
       <div class="edit-hint"><span class="ms ms-sm">edit</span>
-        You can click into the document and edit any text before printing. (Yazdırmadan önce metne tıklayıp düzenleyebilirsiniz.)</div>
-      <div style="background:var(--surface-low);padding:16px;border-radius:var(--radius-lg);max-height:58vh;overflow-y:auto">
+        ${esc(t('handover.editHint'))}</div>
+      <div class="preview-scroll" id="ho-preview-scroll">
       ${groups.map((_, gi) => `<div class="preview-paper" contenteditable="true" spellcheck="false">${
         $('#print-root').children[gi].outerHTML
       }</div>`).join('')}
     </div>`,
     foot: `
-      <button class="btn btn-outline" data-close>Close</button>
+      <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
       ${h.transactionDate && h.employeeId && h.id && h.id !== h.employeeId
-        ? '<button class="btn btn-outline" id="do-download"><span class="ms">download</span> Download PDF</button>' : ''}
-      <button class="btn btn-primary" id="do-print"><span class="ms">print</span> Print Form</button>`,
+        ? `<button class="btn btn-outline" id="do-download"><span class="ms">download</span> ${esc(t('common.download'))} PDF</button>` : ''}
+      <button class="btn btn-primary" id="do-print"><span class="ms">print</span> ${esc(t('common.print'))}</button>`,
     onMount(overlay) {
+      const refreshPreview = () => {
+        const sel = $('#ho-tpl-select', overlay);
+        buildPrintRoot(sel ? sel.value : selectedTplId);
+        const scroll = $('#ho-preview-scroll', overlay);
+        if (scroll) {
+          scroll.innerHTML = groups.map((_, gi) => `<div class="preview-paper" contenteditable="true" spellcheck="false">${
+            $('#print-root').children[gi].outerHTML
+          }</div>`).join('');
+        }
+      };
+      const sel = $('#ho-tpl-select', overlay);
+      if (sel) sel.addEventListener('change', refreshPreview);
+
       $('#do-print', overlay).addEventListener('click', () => {
-        // Print exactly what the user sees (including their inline edits).
         const edited = [...overlay.querySelectorAll('.preview-paper')].map((p) => p.innerHTML).join('');
         $('#print-root').innerHTML = edited;
         fitReceiptsToOnePage();
@@ -1948,8 +2191,9 @@ async function printHandover(h) {
       if (dl) dl.addEventListener('click', async () => {
         dl.disabled = true;
         try {
-          // Server-generated PDF (works even where the print dialog is blocked).
-          const resp = await fetch(`/api/handovers/${h.id}/pdf`, {
+          const lang = (typeof i18nLang === 'function' && i18nLang()) || 'en';
+          const tplQ = selectedTplId ? `&templateId=${encodeURIComponent(selectedTplId)}` : '';
+          const resp = await fetch(`/api/handovers/${h.id}/pdf?lang=${encodeURIComponent(lang)}${tplQ}`, {
             headers: { Authorization: 'Bearer ' + Auth.token },
           });
           if (!resp.ok) {
@@ -1962,7 +2206,7 @@ async function printHandover(h) {
           a.download = `zimmet-HF-${String(h.id).slice(0, 8).toUpperCase()}.pdf`;
           a.click();
           setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-          toast('Zimmet formu PDF olarak indirildi', 'success');
+          toast(t('common.download') + ' PDF', 'success');
         } catch (err) {
           toast(err.message, 'error');
         } finally {
@@ -2612,17 +2856,24 @@ async function viewAuthed(url, title) {
     const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + Auth.token } });
     if (!resp.ok) throw new Error('Could not open the document');
     const blob = await resp.blob();
-    const mime = (blob.type || resp.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
-    const objUrl = URL.createObjectURL(blob);
+    // Ensure PDF blobs carry application/pdf — some downloads arrive as
+    // application/octet-stream, which Chrome then refuses to render in an iframe.
+    const headerMime = (resp.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
     const filename = (resp.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/)?.[1]
       || title || 'Document';
+    const looksPdf = headerMime === 'application/pdf' || /\.pdf$/i.test(filename)
+      || (blob.type || '').toLowerCase() === 'application/pdf';
+    const mime = looksPdf ? 'application/pdf'
+      : ((blob.type || headerMime || '').split(';')[0].trim().toLowerCase());
+    const typed = (mime && blob.type !== mime) ? new Blob([blob], { type: mime }) : blob;
+    const objUrl = URL.createObjectURL(typed);
     const isImg = /^image\//.test(mime);
-    const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(filename);
+    const isPdf = mime === 'application/pdf';
     let body;
     if (isImg) {
       body = `<img class="doc-viewer-img" src="${objUrl}" alt="${esc(filename)}">`;
     } else if (isPdf) {
-      body = `<iframe class="doc-viewer" src="${objUrl}" title="${esc(filename)}"></iframe>`;
+      body = `<iframe class="doc-viewer" src="${objUrl}#toolbar=1" title="${esc(filename)}"></iframe>`;
     } else {
       body = `<div class="table-empty">${esc(t('doc.previewUnavailable'))}</div>`;
     }
@@ -3200,21 +3451,29 @@ function showReportResult(slot, title, rep) {
     csvDownload(`${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`, rep.cols, rep.rows));
   $('#rep-print', slot).addEventListener('click', () => {
     $('#print-root').innerHTML = `
-      <div class="receipt">
-        <div class="r-head">
-          <div class="co">
+      <div class="receipt receipt-v2">
+        <header class="r-banner">
+          <div class="r-banner-left">
             <div class="r-logo">${AppConfig.companyLogo
-              ? `<img src="${esc(AppConfig.companyLogo)}" style="max-width:100%;max-height:100%;object-fit:contain">`
+              ? `<img src="${esc(AppConfig.companyLogo)}" alt="">`
               : esc((AppConfig.companyName || 'A')[0].toUpperCase())}</div>
             <div><h1>${esc((AppConfig.companyName || '').toUpperCase())}</h1>
-              <small>${esc(title)} — ${new Date().toLocaleString()}</small></div>
+              <small>${esc(title)}</small></div>
           </div>
+          <div class="r-banner-right">
+            <h2>${esc(title)}</h2>
+            <h3>${esc(new Date().toLocaleString())}</h3>
+          </div>
+        </header>
+        <div class="r-body">
+          <p class="r-terms">${esc(rep.summary)}</p>
+          <section class="r-card">
+            <table class="r-items">
+              <thead><tr>${rep.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+              <tbody>${rep.rows.map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+            </table>
+          </section>
         </div>
-        <div class="r-terms" style="margin-bottom:8pt">${esc(rep.summary)}</div>
-        <table class="r-items">
-          <thead><tr>${rep.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
-          <tbody>${rep.rows.map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
-        </table>
       </div>`;
     window.print();
   });
@@ -3546,10 +3805,9 @@ Views.reports = async function (el) {
 /* ============================== STOCK COUNT ============================== */
 /*
  * Physical inventory flow: open a session, scan asset barcodes/QRs (handheld
- * scanner types into the box; the camera button uses BarcodeDetector where the
- * browser supports it, otherwise ZXing), then close to compare scans against
- * the inventory. Sessions live on the server, so a count started on the PC can
- * be continued from a phone signed in to the same app.
+ * scanner types into the box; the camera button uses ZXing + BarcodeDetector),
+ * then close to compare scans against the inventory. Sessions live on the
+ * server, so a count started on the PC can be continued from a phone.
  */
 function loadZXing() {
   if (window.ZXing) return Promise.resolve(window.ZXing);
@@ -3565,90 +3823,309 @@ function loadZXing() {
   return loadZXing._p;
 }
 
-async function scanWithCamera(onCode) {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    return toast('Camera is not available in this browser — type the asset tag or serial number instead', 'error');
+/** Hints tuned for ITACM labels (Code 128) + asset QR codes. */
+function zxingHints(ZX) {
+  const hints = new Map();
+  hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+  hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [
+    ZX.BarcodeFormat.CODE_128,
+    ZX.BarcodeFormat.QR_CODE,
+    ZX.BarcodeFormat.CODE_39,
+    ZX.BarcodeFormat.CODE_93,
+    ZX.BarcodeFormat.EAN_13,
+    ZX.BarcodeFormat.EAN_8,
+    ZX.BarcodeFormat.ITF,
+    ZX.BarcodeFormat.DATA_MATRIX,
+  ]);
+  return hints;
+}
+
+function zxingReader(ZX) {
+  return new ZX.BrowserMultiFormatReader(zxingHints(ZX), 250);
+}
+
+const BD_FORMATS = ['qr_code', 'code_128', 'code_39', 'code_93', 'ean_13', 'ean_8', 'itf', 'data_matrix'];
+
+async function detectWithBarcodeDetector(source) {
+  if (!('BarcodeDetector' in window)) return '';
+  try {
+    const detector = new BarcodeDetector({ formats: BD_FORMATS });
+    const codes = await detector.detect(source);
+    if (codes[0] && codes[0].rawValue) return String(codes[0].rawValue).trim();
+  } catch { /* unsupported format / frame */ }
+  return '';
+}
+
+/** Load a File into an HTMLImageElement (honours EXIF orientation via createImageBitmap when available). */
+async function imageFromFile(file) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const canvas = document.createElement('canvas');
+      canvas.width = bmp.width;
+      canvas.height = bmp.height;
+      canvas.getContext('2d').drawImage(bmp, 0, 0);
+      bmp.close();
+      const url = canvas.toDataURL('image/jpeg', 0.92);
+      return loadHtmlImage(url);
+    } catch { /* fall through */ }
   }
+  return loadHtmlImage(URL.createObjectURL(file), true);
+}
+
+function loadHtmlImage(src, revoke) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      if (revoke) URL.revokeObjectURL(src);
+      resolve(img);
+    };
+    img.onerror = () => {
+      if (revoke) URL.revokeObjectURL(src);
+      reject(new Error('Could not load image'));
+    };
+    img.src = src;
+  });
+}
+
+/** Draw image (optionally center-cropped) scaled so the long edge ≤ maxEdge. */
+function canvasFromImage(img, maxEdge, crop = 1) {
+  const sw = img.naturalWidth || img.width;
+  const sh = img.naturalHeight || img.height;
+  const cw = Math.max(1, Math.floor(sw * crop));
+  const ch = Math.max(1, Math.floor(sh * crop));
+  const sx = Math.floor((sw - cw) / 2);
+  const sy = Math.floor((sh - ch) / 2);
+  const scale = Math.min(1, maxEdge / Math.max(cw, ch));
+  const w = Math.max(1, Math.round(cw * scale));
+  const h = Math.max(1, Math.round(ch * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, sx, sy, cw, ch, 0, 0, w, h);
+  return canvas;
+}
+
+async function decodeCanvasWithZXing(ZX, canvas) {
+  const reader = zxingReader(ZX);
+  // Prefer decode from a data-URL image — most reliable across ZXing builds.
+  const img = await loadHtmlImage(canvas.toDataURL('image/jpeg', 0.9));
+  try {
+    const result = await reader.decodeFromImageElement(img);
+    return result && result.getText ? result.getText().trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Decode a barcode/QR from a camera photo. Tries BarcodeDetector + ZXing across
+ * several scales and a center crop — phone cameras often shoot 12MP+ images that
+ * raw ZXing decodeFromImageUrl fails on.
+ */
+async function decodeBarcodeFromFile(file) {
+  const img = await imageFromFile(file);
+  const ZX = await loadZXing();
+
+  // BarcodeDetector on the full (orientation-corrected) image first — fast on Chromium.
+  const fromBd = await detectWithBarcodeDetector(img);
+  if (fromBd) return fromBd;
+
+  const attempts = [
+    { max: 1280, crop: 1 },
+    { max: 960, crop: 1 },
+    { max: 1600, crop: 1 },
+    { max: 1280, crop: 0.72 },
+    { max: 800, crop: 0.55 },
+    { max: 640, crop: 1 },
+  ];
+  for (const a of attempts) {
+    const canvas = canvasFromImage(img, a.max, a.crop);
+    const bd = await detectWithBarcodeDetector(canvas);
+    if (bd) return bd;
+    const zx = await decodeCanvasWithZXing(ZX, canvas);
+    if (zx) return zx;
+  }
+  return '';
+}
+
+/** Photo / capture fallback — works on http://LAN-IP where live getUserMedia is blocked.
+ *  Stays open after each successful read so rapid counting is possible.
+ *  Resolves when the user closes the modal. */
+function scanWithPhoto(onCode) {
+  return new Promise((resolve) => {
+    openModal({
+      title: t('stock.scanCameraTitle'),
+      body: `
+      <p class="cell-sub" style="margin:0 0 14px">${esc(t('stock.photoHint'))}</p>
+      <input type="file" id="sc-photo" accept="image/*" capture="environment" class="hidden">
+      <button type="button" class="btn btn-primary btn-block btn-lg" id="sc-photo-btn">
+        <span class="ms">photo_camera</span> ${esc(t('stock.takePhoto'))}</button>
+      <div id="sc-photo-status" class="cell-sub" style="margin-top:12px;text-align:center"></div>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
+      onClose: () => resolve(),
+      onMount(overlay) {
+        const input = $('#sc-photo', overlay);
+        const status = $('#sc-photo-status', overlay);
+        $('#sc-photo-btn', overlay).addEventListener('click', () => input.click());
+        input.addEventListener('change', async () => {
+          const file = input.files && input.files[0];
+          input.value = '';
+          if (!file) return;
+          status.textContent = t('stock.decoding');
+          try {
+            const code = await decodeBarcodeFromFile(file);
+            if (!code) {
+              status.textContent = t('stock.noCodeInPhoto');
+              return;
+            }
+            status.textContent = code;
+            await onCode(code); // toast only — do NOT close; ready for next photo
+            status.textContent = t('stock.keepScanning');
+          } catch {
+            status.textContent = t('stock.noCodeInPhoto');
+          }
+        });
+      },
+    });
+  });
+}
+
+/** Live continuous camera scan (HTTPS / localhost). Camera stays open until the
+ *  user taps Stop — each hit only fires a toast via onCode. */
+async function scanWithCamera(onCode) {
+  const canLive = window.isSecureContext
+    && navigator.mediaDevices
+    && typeof navigator.mediaDevices.getUserMedia === 'function';
+
+  if (!canLive) return scanWithPhoto(onCode);
+
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        // Help autofocus lock onto nearby labels when the browser supports it.
+        advanced: [{ focusMode: 'continuous' }],
+      },
     });
   } catch (err) {
-    const name = (err && err.name) || '';
-    const tip = name === 'NotAllowedError'
-      ? 'Camera permission denied — allow camera access for this site'
-      : name === 'NotFoundError'
-        ? 'No camera found on this device'
-        : 'Camera access failed (HTTPS or localhost required on most phones)';
-    return toast(tip, 'error');
+    // Retry without advanced constraints (some browsers reject the whole call).
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+    } catch (err2) {
+      const name = (err2 && err2.name) || (err && err.name) || '';
+      if (name === 'NotAllowedError' || name === 'NotFoundError' || name === 'NotReadableError' || name === 'SecurityError') {
+        return scanWithPhoto(onCode);
+      }
+      toast('Camera access failed — type the tag or serial, or try again', 'error');
+      return;
+    }
   }
 
-  let last = ''; let lastAt = 0; let timer = null; let zxControls = null;
-  const accept = (v) => {
-    if (!v) return;
-    const code = String(v).trim();
-    if (!code) return;
-    if (code === last && Date.now() - lastAt < 2500) return;
-    last = code; lastAt = Date.now();
-    const hint = document.getElementById('scan-last');
-    if (hint) hint.textContent = code;
-    onCode(code);
-  };
-  const stop = () => {
-    clearInterval(timer);
-    try { if (zxControls && zxControls.stop) zxControls.stop(); } catch { /* ignore */ }
-    stream.getTracks().forEach((t) => t.stop());
-    closeModal();
-  };
-
-  openModal({
-    title: t('stock.scanCameraTitle'),
-    body: `
-      <video id="scan-video" autoplay muted playsinline style="width:100%;border-radius:12px;background:#000;max-height:60vh;object-fit:cover"></video>
-      <div class="cell-sub" style="margin-top:8px;text-align:center">${esc(t('stock.tipPhone'))}</div>
-      <div id="scan-last" style="text-align:center;margin-top:6px;font-weight:700"></div>`,
-    foot: `<button class="btn btn-primary" id="scan-stop">${esc(t('stock.stopScanning'))}</button>`,
-    onClose() {
+  return new Promise((resolve) => {
+    let last = ''; let lastAt = 0; let timer = null; let zxControls = null; let busy = false;
+    let switchingToPhoto = false;
+    const cleanup = () => {
       clearInterval(timer);
       try { if (zxControls && zxControls.stop) zxControls.stop(); } catch { /* ignore */ }
       stream.getTracks().forEach((t) => t.stop());
-    },
-    async onMount(overlay) {
-      const video = $('#scan-video', overlay);
-      video.setAttribute('playsinline', 'true');
-      video.muted = true;
-      video.srcObject = stream;
-      try { await video.play(); } catch { /* autoplay policies — playsinline usually enough */ }
-      $('#scan-stop', overlay).addEventListener('click', stop);
-
-      if ('BarcodeDetector' in window) {
-        try {
-          const detector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
-          timer = setInterval(async () => {
-            try {
-              if (video.readyState < 2) return;
-              const codes = await detector.detect(video);
-              if (codes[0] && codes[0].rawValue) accept(codes[0].rawValue);
-            } catch { /* frame not ready */ }
-          }, 350);
-          return;
-        } catch { /* fall through to ZXing */ }
-      }
-
-      // Safari / Firefox / older mobile browsers: ZXing fallback.
+    };
+    const setFeedback = (text, ok) => {
+      const hint = document.getElementById('scan-last');
+      if (!hint) return;
+      hint.textContent = text;
+      hint.style.color = ok === true ? 'var(--emerald-600)' : ok === false ? 'var(--rose-700)' : '';
+    };
+    const accept = async (v) => {
+      if (!v || busy) return;
+      const code = String(v).trim();
+      if (!code) return;
+      if (code === last && Date.now() - lastAt < 1800) return;
+      last = code; lastAt = Date.now();
+      busy = true;
+      setFeedback(code, null);
       try {
-        const ZX = await loadZXing();
-        const reader = new ZX.BrowserMultiFormatReader();
-        zxControls = await reader.decodeFromStream(stream, video, (result) => {
-          if (result) accept(result.getText());
-        });
-      } catch (err) {
-        toast((err && err.message) || 'Camera scanner failed — type the tag or serial instead', 'error');
-        stop();
+        await onCode(code); // toast only — camera stays open
+        setFeedback(`${code} · ${t('stock.keepScanning')}`, true);
+      } catch {
+        setFeedback(code, false);
+      } finally {
+        busy = false;
       }
-    },
+    };
+
+    openModal({
+      title: t('stock.scanCameraTitle'),
+      body: `
+      <video id="scan-video" class="sc-scan-video" autoplay muted playsinline webkit-playsinline></video>
+      <div class="cell-sub" style="margin-top:8px;text-align:center">${esc(t('stock.tipPhone'))}</div>
+      <div id="scan-last" style="text-align:center;margin-top:8px;font-weight:700;min-height:1.4em"></div>`,
+      foot: `<button class="btn btn-outline" id="sc-photo-fallback">${esc(t('stock.takePhoto'))}</button>
+        <button class="btn btn-primary" id="scan-stop">${esc(t('stock.stopScanning'))}</button>`,
+      onClose() {
+        cleanup();
+        if (!switchingToPhoto) resolve();
+      },
+      async onMount(overlay) {
+        const video = $('#scan-video', overlay);
+        video.setAttribute('playsinline', 'true');
+        video.muted = true;
+        video.srcObject = stream;
+        try { await video.play(); } catch { /* autoplay policies */ }
+        $('#scan-stop', overlay).addEventListener('click', () => closeModal());
+        // If live decode struggles (blurry label), jump to the photo decoder.
+        $('#sc-photo-fallback', overlay).addEventListener('click', () => {
+          switchingToPhoto = true;
+          cleanup();
+          closeModal();
+          resolve(scanWithPhoto(onCode));
+        });
+
+        // Run ZXing continuously (strong on Code 128 labels) and BarcodeDetector
+        // in parallel when available — do not rely on BarcodeDetector alone.
+        try {
+          const ZX = await loadZXing();
+          const reader = zxingReader(ZX);
+          zxControls = await reader.decodeFromStream(stream, video, (result, err) => {
+            if (result) accept(result.getText());
+            // NotFoundException every frame is normal — ignore.
+            void err;
+          });
+        } catch {
+          // Fall through — BarcodeDetector-only still helps for QR.
+        }
+
+        if ('BarcodeDetector' in window) {
+          try {
+            const detector = new BarcodeDetector({ formats: BD_FORMATS });
+            timer = setInterval(async () => {
+              try {
+                if (video.readyState < 2 || busy) return;
+                const codes = await detector.detect(video);
+                if (codes[0] && codes[0].rawValue) accept(codes[0].rawValue);
+              } catch { /* frame not ready */ }
+            }, 320);
+          } catch { /* ignore */ }
+        }
+
+        if (!zxControls && !timer) {
+          switchingToPhoto = true;
+          cleanup();
+          closeModal();
+          resolve(scanWithPhoto(onCode));
+        }
+      },
+    });
   });
 }
 
@@ -3693,22 +4170,24 @@ Views.stockcount = async function (el, params = {}) {
     if (c.status !== 'open') { active.innerHTML = ''; return; }
     const pct = c.expectedTotal ? Math.round((c.matchedTotal / c.expectedTotal) * 100) : 0;
     active.innerHTML = `
-      <div class="card card-pad" style="border-color:var(--primary-container);box-shadow:0 0 0 1px var(--primary-container)">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <div style="flex:1;min-width:220px">
+      <div class="card card-pad sc-panel" style="border-color:var(--primary-container);box-shadow:0 0 0 1px var(--primary-container)">
+        <div class="sc-panel-head">
+          <div class="sc-panel-meta">
             <div class="cell-title" style="font-size:16px">${esc(c.name)} <span class="pill pill-emerald">Open</span></div>
-            <div class="cell-sub">${esc(c.location || 'All locations')} • counted <strong>${c.matchedTotal}</strong> of
+            <div class="cell-sub">${esc(c.location || t('stock.allLocations'))} • counted <strong>${c.matchedTotal}</strong> of
               <strong>${c.expectedTotal}</strong> expected devices (${pct}%)
               ${c.scans.length - c.matchedTotal > 0 ? ` • <span style="color:var(--rose-700)">${c.scans.length - c.matchedTotal} unknown scan(s)</span>` : ''}</div>
             <div class="seat-bar" style="margin-top:8px;max-width:340px"><i style="width:${pct}%"></i></div>
           </div>
           ${canDo ? `
-          <button class="btn btn-outline" id="sc-camera"><span class="ms">photo_camera</span> ${esc(t('stock.cameraBtn'))}</button>
-          <button class="btn btn-danger" id="sc-close"><span class="ms">task_alt</span> ${esc(t('stock.closeCompare'))}</button>` : ''}
+          <div class="sc-panel-actions">
+            <button class="btn btn-outline" id="sc-camera"><span class="ms">photo_camera</span> ${esc(t('stock.cameraBtn'))}</button>
+            <button class="btn btn-danger" id="sc-close"><span class="ms">task_alt</span> ${esc(t('stock.closeCompare'))}</button>
+          </div>` : ''}
         </div>
         ${canDo ? `
-        <div class="search-box" style="margin-top:14px;max-width:420px"><span class="ms">qr_code_scanner</span>
-          <input id="sc-input" placeholder="${esc(t('stock.scanPlaceholder'))}" autocomplete="off">
+        <div class="search-box sc-scan-box"><span class="ms">qr_code_scanner</span>
+          <input id="sc-input" placeholder="${esc(t('stock.scanPlaceholder'))}" autocomplete="off" inputmode="text" enterkeyhint="done">
         </div>
         <div class="cell-sub" style="margin-top:6px">${esc(t('stock.tipPhone'))}</div>` : ''}
         <div id="sc-recent" style="margin-top:10px">
@@ -3727,23 +4206,35 @@ Views.stockcount = async function (el, params = {}) {
       if (!raw || !raw.trim()) return;
       try {
         const r = await api(`/counts/${id}/scan`, { method: 'POST', body: { raw: raw.trim() } });
-        if (r.duplicate) toast(`${esc(r.assetTag || r.raw)} already scanned`, 'error');
-        else if (r.matched) toast(`✓ ${r.asset.brand} ${r.asset.model} (${r.assetTag}) counted`, 'success');
-        else toast(`"${r.raw}" is not in the inventory — recorded as unknown`, 'error');
-        renderActive(id);
-      } catch (err) { toast(err.message, 'error'); }
+        if (r.duplicate) toast(`${r.assetTag || r.raw} ${t('stock.alreadyScanned')}`, 'error');
+        else if (r.matched) toast(`✓ ${r.asset.brand} ${r.asset.model} (${r.assetTag}) ${t('stock.counted')}`, 'success');
+        else toast(`"${r.raw}" ${t('stock.notInInventory')}`, 'error');
+        // While the camera/photo modal is open, only toast — don't rebuild the page
+        // (keeps the live scanner running for rapid consecutive scans).
+        const scanning = document.getElementById('scan-video') || document.getElementById('sc-photo');
+        if (!scanning) renderActive(id);
+      } catch (err) {
+        toast(err.message, 'error');
+        throw err;
+      }
     };
     const inp = $('#sc-input', active);
-    inp.focus();
+    // Don't auto-focus on phones — it opens the keyboard and collapses the scan UI.
+    if (inp && window.matchMedia('(pointer: fine)').matches) inp.focus();
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); submitScan(inp.value); inp.value = ''; }
     });
-    $('#sc-camera', active).addEventListener('click', () => scanWithCamera(submitScan));
+    $('#sc-camera', active).addEventListener('click', () => {
+      scanWithCamera(submitScan).finally(() => {
+        // Refresh the session panel once the user closes the scanner.
+        if (currentOpen === id) renderActive(id);
+      });
+    });
     $('#sc-close', active).addEventListener('click', () => confirmModal(
       'Close this count and compare against the inventory? No more scans can be added afterwards.',
       async () => {
         const closed = await api(`/counts/${id}/close`, { method: 'POST' });
-        toast('Count closed', 'success');
+        toast(t('stock.countClosed'), 'success');
         Views.stockcount(el, {});
         showCountResult(closed);
       }));
@@ -3751,36 +4242,133 @@ Views.stockcount = async function (el, params = {}) {
 
   function showCountResult(c) {
     const s = c.summary || {};
+    const foundList = Array.isArray(s.foundDevices) ? s.foundDevices : [];
+    const missingList = Array.isArray(s.missing) ? s.missing : [];
+    const unexpectedList = Array.isArray(s.unexpected) ? s.unexpected : [];
+
+    const rows = [
+      ...foundList.map((m) => ({ ...m, outcome: 'found' })),
+      ...missingList.map((m) => ({ ...m, outcome: 'missing' })),
+      ...unexpectedList.map((u) => ({
+        assetTag: u, brand: '', model: '', category: '', status: '', location: '',
+        holder: '', serialNumber: '', outcome: 'unknown',
+      })),
+    ];
+
+    const isAssigned = (r) => r.outcome !== 'unknown'
+      && (r.status === 'Assigned' || !!(r.holder && String(r.holder).trim()));
+
     openModal({
-      title: `Count result — ${c.name}`,
+      title: `${t('stock.resultTitle')} — ${c.name}`,
       wide: true,
       body: `
         <div class="grid grid-4" style="margin-bottom:16px">
           <div class="card card-pad metric"><h3 class="card-title">Expected</h3><div class="metric-value">${s.expected ?? 0}</div></div>
-          <div class="card card-pad metric"><h3 class="card-title">Found</h3><div class="metric-value" style="color:var(--emerald-600)">${s.found ?? 0}</div></div>
-          <div class="card card-pad metric"><h3 class="card-title">Missing</h3><div class="metric-value" style="color:var(--rose-700)">${s.missingCount ?? 0}</div></div>
-          <div class="card card-pad metric"><h3 class="card-title">Unknown scans</h3><div class="metric-value">${s.unexpectedCount ?? 0}</div></div>
+          <div class="card card-pad metric"><h3 class="card-title">${esc(t('stock.filterFound'))}</h3><div class="metric-value" style="color:var(--emerald-600)">${s.found ?? foundList.length}</div></div>
+          <div class="card card-pad metric"><h3 class="card-title">${esc(t('stock.filterMissing'))}</h3><div class="metric-value" style="color:var(--rose-700)">${s.missingCount ?? missingList.length}</div></div>
+          <div class="card card-pad metric"><h3 class="card-title">${esc(t('stock.filterUnknown'))}</h3><div class="metric-value">${s.unexpectedCount ?? unexpectedList.length}</div></div>
         </div>
-        ${(s.missing || []).length ? `
-        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">Missing devices (in system, not scanned)</h3>
-        <div class="table-wrap" style="max-height:300px;overflow-y:auto"><table class="data">
-          <thead><tr><th>Tag</th><th>Device</th><th>Status</th><th>Location</th><th>Holder</th></tr></thead>
-          <tbody>${s.missing.map((m) => `
-            <tr><td class="mono">${esc(m.assetTag)}</td><td>${esc(m.brand)} ${esc(m.model)}</td>
-            <td>${badge(m.status)}</td><td class="cell-sub">${esc(m.location || '—')}</td><td class="cell-sub">${esc(m.holder || '—')}</td></tr>`).join('')}
-          </tbody></table></div>` : '<div class="cell-sub">🎉 Nothing missing — every expected device was scanned.</div>'}
-        ${(s.unexpected || []).length ? `
-        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:14px 0 6px">Unknown scans (not in the system)</h3>
-        <div>${s.unexpected.map((u) => `<span class="chip mono" style="margin:0 6px 6px 0;display:inline-block">${esc(u)}</span>`).join('')}</div>` : ''}`,
-      foot: `<button class="btn btn-outline" data-close>Close</button>
-        ${(s.missing || []).length ? '<button class="btn btn-primary" id="sc-export"><span class="ms">download</span> Export missing (CSV)</button>' : ''}`,
+        <div class="toolbar" style="margin-bottom:10px">
+          <label class="cell-sub" style="display:flex;align-items:center;gap:6px">
+            ${esc(t('stock.filterResult'))}
+            <select id="sc-f-outcome" style="width:auto">
+              <option value="all">${esc(t('stock.filterAll'))}</option>
+              <option value="found">${esc(t('stock.filterFound'))}</option>
+              <option value="missing">${esc(t('stock.filterMissing'))}</option>
+              <option value="unknown">${esc(t('stock.filterUnknown'))}</option>
+            </select>
+          </label>
+          <label class="cell-sub" style="display:flex;align-items:center;gap:6px">
+            ${esc(t('stock.filterAssignment'))}
+            <select id="sc-f-assign" style="width:auto">
+              <option value="all">${esc(t('stock.filterAll'))}</option>
+              <option value="assigned">${esc(t('stock.filterAssigned'))}</option>
+              <option value="unassigned">${esc(t('stock.filterUnassigned'))}</option>
+            </select>
+          </label>
+          <div class="search-box" style="flex:1;min-width:160px">
+            <span class="ms">search</span>
+            <input type="search" id="sc-f-q" placeholder="${esc(t('stock.searchDevices'))}" autocomplete="off">
+          </div>
+          <span class="spacer"></span>
+          <span id="sc-f-count" class="cell-sub"></span>
+        </div>
+        <div class="table-wrap" style="max-height:380px;overflow-y:auto">
+          <table class="data">
+            <thead><tr>
+              <th>${esc(t('stock.colOutcome'))}</th>
+              <th>Tag</th><th>Device</th><th>Status</th><th>Location</th><th>Holder</th>
+            </tr></thead>
+            <tbody id="sc-f-tbody"></tbody>
+          </table>
+        </div>
+        <div id="sc-f-empty" class="cell-sub" style="display:none;margin-top:10px">${esc(t('stock.noFilterMatch'))}</div>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close') || 'Close')}</button>
+        <button class="btn btn-primary" id="sc-export"><span class="ms">download</span> ${esc(t('stock.exportFiltered'))}</button>`,
       onMount(overlay) {
-        const ex = $('#sc-export', overlay);
-        if (ex) ex.addEventListener('click', () => csvDownload(
-          `stock-count-missing-${new Date().toISOString().slice(0, 10)}.csv`,
-          ['Asset Tag', 'Brand', 'Model', 'Category', 'Status', 'Location', 'Holder'],
-          (s.missing || []).map((m) => [m.assetTag, m.brand, m.model, m.category, m.status, m.location || '', m.holder || ''])
-        ));
+        const tbody = $('#sc-f-tbody', overlay);
+        const empty = $('#sc-f-empty', overlay);
+        const countEl = $('#sc-f-count', overlay);
+        const outcomeSel = $('#sc-f-outcome', overlay);
+        const assignSel = $('#sc-f-assign', overlay);
+        const qInp = $('#sc-f-q', overlay);
+        let filtered = rows.slice();
+
+        const outcomeLabel = (o) => {
+          if (o === 'found') return `<span class="pill pill-emerald">${esc(t('stock.filterFound'))}</span>`;
+          if (o === 'missing') return `<span class="pill pill-rose">${esc(t('stock.filterMissing'))}</span>`;
+          return `<span class="pill pill-amber">${esc(t('stock.filterUnknown'))}</span>`;
+        };
+
+        const apply = () => {
+          const outcome = outcomeSel.value;
+          const assign = assignSel.value;
+          const q = (qInp.value || '').trim().toLowerCase();
+          filtered = rows.filter((r) => {
+            if (outcome !== 'all' && r.outcome !== outcome) return false;
+            if (assign === 'assigned') {
+              if (r.outcome === 'unknown' || !isAssigned(r)) return false;
+            } else if (assign === 'unassigned') {
+              if (r.outcome === 'unknown' || isAssigned(r)) return false;
+            }
+            if (q) {
+              const hay = [r.assetTag, r.brand, r.model, r.category, r.status, r.location, r.holder, r.serialNumber]
+                .map((x) => String(x || '').toLowerCase()).join(' ');
+              if (!hay.includes(q)) return false;
+            }
+            return true;
+          });
+          countEl.textContent = `${filtered.length} / ${rows.length}`;
+          empty.style.display = filtered.length ? 'none' : '';
+          tbody.innerHTML = filtered.map((r) => `
+            <tr>
+              <td>${outcomeLabel(r.outcome)}</td>
+              <td class="mono">${esc(r.assetTag || '—')}</td>
+              <td>${r.outcome === 'unknown' ? '—' : `${esc(r.brand || '')} ${esc(r.model || '')}`.trim() || '—'}</td>
+              <td>${r.status ? badge(r.status) : '—'}</td>
+              <td class="cell-sub">${esc(r.location || '—')}</td>
+              <td class="cell-sub">${esc(r.holder || '—')}</td>
+            </tr>`).join('');
+        };
+
+        outcomeSel.addEventListener('change', apply);
+        assignSel.addEventListener('change', apply);
+        qInp.addEventListener('input', apply);
+        apply();
+
+        $('#sc-export', overlay).addEventListener('click', () => {
+          const date = new Date().toISOString().slice(0, 10);
+          const parts = ['stock-count', outcomeSel.value, assignSel.value, date]
+            .filter((p) => p && p !== 'all');
+          csvDownload(
+            `${parts.join('-')}.csv`,
+            ['Outcome', 'Asset Tag', 'Serial', 'Brand', 'Model', 'Category', 'Status', 'Location', 'Holder'],
+            filtered.map((r) => [
+              r.outcome, r.assetTag, r.serialNumber || '', r.brand, r.model,
+              r.category, r.status, r.location || '', r.holder || '',
+            ])
+          );
+        });
       },
     });
   }

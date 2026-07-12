@@ -91,15 +91,29 @@ async function updateEmployee(id, body) {
   return mapRow(updated.rows[0]);
 }
 
-/** Full device history of one employee: every assign/return/repair event. */
+/** Full activity history of one employee: devices + mobile line zimmet events. */
 async function getEmployeeHistory(id, limit = 100) {
   if (!isUuid(id)) throw HttpError.notFound(`Employee ${id} not found`);
-  const { rows } = await query(
-    `SELECT * FROM asset_history WHERE employee_id = $1
-     ORDER BY "timestamp" DESC LIMIT $2`,
-    [id, Math.min(Number(limit) || 100, 500)]
-  );
-  return mapRows(rows);
+  const cap = Math.min(Number(limit) || 100, 500);
+  const [devices, lines] = await Promise.all([
+    query(
+      `SELECT id, asset_tag AS label, action_type, notes, changed_by_name, employee_name, "timestamp",
+              'device' AS kind
+       FROM asset_history WHERE employee_id = $1
+       ORDER BY "timestamp" DESC LIMIT $2`,
+      [id, cap]
+    ),
+    query(
+      `SELECT id, phone_number AS label, action_type, notes, changed_by_name, employee_name, "timestamp",
+              'line' AS kind
+       FROM mobile_line_history WHERE employee_id = $1
+       ORDER BY "timestamp" DESC LIMIT $2`,
+      [id, cap]
+    ).catch(() => ({ rows: [] })), // table may not exist until migrate runs
+  ]);
+  return [...mapRows(devices.rows), ...mapRows(lines.rows)]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, cap);
 }
 
 module.exports = { listEmployees, getEmployee, createEmployee, updateEmployee, getEmployeeHistory };

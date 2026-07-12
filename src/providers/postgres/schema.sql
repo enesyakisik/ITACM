@@ -199,6 +199,12 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS document_storage JSONB;
 
 -- Customizable Zimmet Tutanağı (handover form) template (Owner-managed).
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS handover_template JSONB;
+-- Multiple named templates (array). When set, takes precedence; handover_template
+-- stays mirrored as the default for backward compatibility.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS handover_templates JSONB;
+
+-- Which template was used when the handover was created (reprint/PDF).
+ALTER TABLE handovers ADD COLUMN IF NOT EXISTS template_id TEXT;
 
 -- Per-employee handover document archive (generated PDFs + uploaded signed scans)
 CREATE TABLE IF NOT EXISTS handover_documents (
@@ -305,5 +311,22 @@ CREATE TABLE IF NOT EXISTS mobile_lines (
 );
 CREATE INDEX IF NOT EXISTS idx_lines_employee ON mobile_lines (current_employee_id);
 
+-- Mobile line assign / take-back audit (feeds employee history timeline)
+CREATE TABLE IF NOT EXISTS mobile_line_history (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  line_id         UUID NOT NULL REFERENCES mobile_lines(id) ON DELETE CASCADE,
+  phone_number    TEXT NOT NULL,
+  employee_id     UUID,
+  employee_name   TEXT,
+  action_type     TEXT NOT NULL CHECK (action_type IN ('line_assigned', 'line_unassigned')),
+  notes           TEXT NOT NULL DEFAULT '',
+  changed_by      TEXT,
+  changed_by_name TEXT,
+  "timestamp"     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_line_history_employee ON mobile_line_history (employee_id, "timestamp" DESC);
+CREATE INDEX IF NOT EXISTS idx_line_history_line ON mobile_line_history (line_id, "timestamp" DESC);
+
 -- UI language default for the instance (per-browser override in localStorage)
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS language TEXT;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS company_address TEXT;

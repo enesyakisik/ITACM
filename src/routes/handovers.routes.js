@@ -8,8 +8,10 @@ router.use(authenticate);
 /**
  * POST /api/handovers — execute the atomic Handover Basket transaction (Admin/Helpdesk).
  * Body: { employeeId, documentType: "single"|"separate",
- *         items: [{ assetId, conditionNote }] }
- * 409 with a per-asset conflict list if any basket item is not "In Stock".
+ *         items: [{ assetId, conditionNote }],
+ *         lines?: [{ lineId, conditionNote }],
+ *         templateId?: string }
+ * 409 with a conflict list if any asset is not In Stock or any line is already assigned.
  */
 router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   const receipt = await handoverService.executeHandover(req.body, req.user);
@@ -24,10 +26,18 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, data: await handoverService.listHandovers(req.query) });
 }));
 
-/** GET /api/handovers/:id/pdf — download the receipt as a real PDF file. */
+/** GET /api/handovers/:id/pdf — download the receipt as a real PDF file.
+ *  Query: ?lang=&templateId= (templateId overrides the one stored on the handover). */
 router.get('/:id/pdf', asyncHandler(async (req, res) => {
   const { buildReceiptPdf } = require('../utils/handoverArchive');
-  const { buffer, filename } = await buildReceiptPdf(req.params.id, req.user.username || req.user.email);
+  const lang = String(req.query.lang || '').slice(0, 5);
+  const templateId = req.query.templateId ? String(req.query.templateId).slice(0, 64) : undefined;
+  const { buffer, filename } = await buildReceiptPdf(
+    req.params.id,
+    req.user.username || req.user.email,
+    lang || undefined,
+    templateId
+  );
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buffer);

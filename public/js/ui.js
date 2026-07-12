@@ -32,6 +32,8 @@ const STATUS_PILLS = {
   'returned': 'pill-emerald',
   'sent_to_repair': 'pill-amber',
   'repair_update': 'pill-amber',
+  'line_assigned': 'pill-blue',
+  'line_unassigned': 'pill-rose',
   'Completed': 'pill-emerald',
 };
 function badge(text) {
