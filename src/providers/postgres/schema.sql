@@ -330,3 +330,6 @@ CREATE INDEX IF NOT EXISTS idx_line_history_line ON mobile_line_history (line_id
 -- UI language default for the instance (per-browser override in localStorage)
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS language TEXT;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS company_address TEXT;
+
+-- Barcode/asset-label design: sizes (mm) + which fields to print
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS label_config JSONB;

@@ -30,9 +30,12 @@
 | Ayarlar/Onboarding | `showSettings`, `showTemplateCustomizer` (app.js), `#ob-*` | setup.routes.js | settingsService | app_settings |
 | Belgeler (indirme) | `downloadAuthed`, `viewAuthed` | documents.routes.js + maintenance.routes.js | documentService | handover_documents, maintenance_documents |
 | Stok Sayımı | `Views.stockcount` | counts.routes.js | countService | stock_counts, stock_count_scans |
-| Mobil Hatlar | `Views.lines`, `showEmployeeDetail` | lines.routes.js | lineService | mobile_lines |
-| Raporlar | `Views.reports`, `REPORT_BUILDERS`, `CUSTOM_SOURCES` | (mevcut endpointleri okur) | — | — |
-- `public/js/ui.js`: `$`, `esc` (XSS!), `openModal/formModal/confirmModal`, `bindView`, `toast`, `badge`
+| Mobil Hatlar | `Views.lines`, `showEmployeeDetail` | lines.routes.js | lineService | mobile_lines, mobile_line_history |
+| Excel Migrasyonu | `showImportModal` (Assets) | import.routes.js | importService | employees, assets, catalog_models, handovers, asset_history |
+
+## Kritik paylaşılan yardımcılar
+- `public/js/ui.js`: `$`, `esc` (XSS!), `openModal/formModal/confirmModal`, `bindView`, `toast`, `badge`, `parseCsv`
+- `public/js/i18n.js`: `t()` / `setLang()` / `applyStaticI18n` — dil allowlist'i `I18N_LANGS`; bilinmeyen anahtar İngilizce'ye düşer
 - `public/js/api.js`: `api()` (Bearer ekler), `Auth`, `AppConfig` (= GET /api/config; app_settings'in kamuya açık kısmı — yeni ayar eklersen otomatik gelir)
 - `public/js/barcode.js`: `code128SVG` — bağımlılıksız Code128-B
 - `src/utils/uploadGuard.js`: `validateUpload` — magic-byte kontrolü; TÜM dosya yükleme rotaları bunu KULLANMALI

@@ -74,7 +74,7 @@ Donanım envanteri · yazdırılabilir PDF tutanaklı çalışan zimmet işlemle
 <td width="50%" valign="top">
 
 ### 🖥 Dahili web arayüzü
-Backend'in kendisi tarafından sunulur — build adımı yok. Giriş, Dashboard, Donanım Envanteri (toplu işlemler, QR kodlar, global arama), Personel Rehberi, Zimmet sepeti, Lisanslar, Sarf Malzemeleri, Bakım ve BT Kullanıcı yönetimi. Sadece `http://localhost:8000` adresini açın.
+Backend'in kendisi tarafından sunulur — build adımı yok. Giriş, Dashboard, Donanım Envanteri (toplu işlemler, QR kodlar, global arama), Personel Rehberi, Zimmet sepeti, Lisanslar, **Mobil Hatlar**, Sarf Malzemeleri, Bakım, **Stok Sayımı** ve BT Kullanıcı yönetimi. Sadece `http://localhost:8000` adresini açın.
 
 ### 🤝 Atomik zimmet sepeti
 Birden çok varlığı tek "ya hep ya hiç" transaction'ı ile çalışana zimmetleyin; yazdırılabilir Zimmet Tutanağı otomatik oluşur. Satır kilitleri çift atamayı imkânsız kılar.
@@ -88,23 +88,38 @@ Servise gönder / geri al / hurdaya ayır; onarım öncesi zimmet durumu otomati
 ### 📄 Yazılım lisansları
 Koltuk havuzları, atomik tahsis/bırakma, 30 gün kala uyarılar ve lisansın kimlerde olduğunun CSV export'u.
 
+### 📱 Mobil hatlar
+Kurumsal SIM ve telefon numaraları birinci sınıf envanter: operatör, tarife, ICCID, aylık maliyet. Geçmişiyle birlikte ata / geri al — hatlar çalışan profilinde ve zimmet formlarında görünür.
+
+### 📥 Excel / CSV migrasyonu
+Şablonu indirin, mevcut zimmet Excel'inizi doldurun, yükleyin — ön izleme tam olarak ne oluşturulacağını gösterir; ardından tek transaction çalışanları, katalog kayıtlarını, cihazları (sıralı tag) ve kişi başına bir zimmeti tam geçmişiyle otomatik oluşturur.
+
 </td>
 <td width="50%" valign="top">
 
 ### 🔐 Rol tabanlı yetkilendirme
-`Owner`, `Admin`, `Helpdesk`, `Viewer` rolleri **her** endpoint'te uygulanır; her istekte tekrar kontrol edilir, böylece değişiklikler anında etki eder.
+`Owner`, `Admin`, `Helpdesk`, `Viewer` rolleri **her** endpoint'te uygulanır; her istekte tekrar kontrol edilir, böylece değişiklikler anında etki eder. Owner hesapları devre dışı bırakabilir veya silebilir — her işlem kalıcı denetim loguna düşer.
 
 ### 🧾 Tam denetim izi
 Her zimmet / iade / onarım / yazılım-zimmeti kim, ne zaman, neden bilgisiyle kişi bazlı aktivite zaman çizgisinde; kullanıcı bazlı login geçmişi.
 
 ### ⏳ Ürün yaşam döngüsü (EOL)
-Kategori başına yaşam süresi + cihaza özel override (ör. MacBook 5 yıl). Her varlıkta EOL tarihi ve "EOL soon" / gecikti rozetleri.
+Kategori başına yaşam süresi + cihaza özel override (ör. MacBook 5 yıl) — ya da bir kategoride (aksesuarlar) EOL kutusunu kaldırıp takipten tamamen çıkarın. Her varlıkta EOL tarihi ve "EOL soon" / gecikti rozetleri.
+
+### 📦 Fiziksel stok sayımı
+Bir sayım oturumu açın ve **oturum açan herhangi bir cihazdan** tarayın — bilgisayarda başlatın, telefondan barkod/QR okutmaya devam edin. Oturumu kapatınca canlı envanterle karşılaştırılır: bulunan / eksik / bilinmeyen + CSV export.
+
+### 🏷 Barkod etiketleri
+Bir veya birden çok cihaz seçip taranabilir **Code 128** etiketleri yazdırın (şirket, model, seri). Etiket boyutu, alanlar ve kopya sayısı yapılandırılabilir ve instance genelinde hatırlanır.
 
 ### 📈 Raporlar & oluşturucu
 19 gruplu hazır rapor + oluşturucu (7 veri kaynağı × seçilebilir kolon × filtre), Excel uyumlu CSV veya antetli yazdırma.
 
 ### 📁 Belge arşivi & 📦 sarf malzemeleri
-İmzalı zimmet taramaları ve onarım evrakları yükleyin (DB'de saklanır, yedeklere dahil). Sarf malzeme stok hareketlerini kritik stok uyarılarıyla takip edin.
+İmzalı zimmet taramaları ve onarım evrakları yükleyin (DB'de saklanır, yedeklere dahil) — dosya adına tıklayınca belge doğrudan görüntülenir. Sarf malzeme stok hareketlerini kritik stok uyarılarıyla takip edin.
+
+### 🌍 Çoklu dil arayüzü
+12 dil (EN, TR, DE, FR, ES, IT, PT, NL, PL, RU, AR, JA). Onboarding ekranında seçin, Ayarlar'dan istediğiniz zaman değiştirin; çevrilmemiş metinler İngilizce'ye düşer.
 
 </td>
 </tr>

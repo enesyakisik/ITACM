@@ -51,11 +51,11 @@ router.post('/setup', asyncHandler(async (req, res) => {
 router.put('/settings', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
   const {
     companyName, companyLogo, companyAddress, handoverTerms, defaultLocation, documentStorage,
-    handoverTemplate, handoverTemplates, defaultTemplateId, language,
+    handoverTemplate, handoverTemplates, defaultTemplateId, language, labelConfig,
   } = req.body || {};
   const saved = await settingsService.saveSettings({
     companyName, companyLogo, companyAddress, handoverTerms, defaultLocation, documentStorage,
-    handoverTemplate, handoverTemplates, defaultTemplateId, language,
+    handoverTemplate, handoverTemplates, defaultTemplateId, language, labelConfig,
   });
   res.json({ success: true, data: saved });
 }));

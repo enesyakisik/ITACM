@@ -796,15 +796,35 @@ textarea { resize: vertical; min-height: 60px; }
 .label-page { display: flex; flex-wrap: wrap; gap: 4mm; align-content: flex-start;
   page-break-after: always; page-break-inside: avoid; break-after: page; }
 .label-page:last-child { page-break-after: auto; break-after: auto; }
-.asset-label { width: 58mm; box-sizing: border-box; border: 1px solid #000; border-radius: 2mm; padding: 3mm;
-  text-align: center; color: #000; background: #fff; font-family: var(--font); page-break-inside: avoid; }
-.asset-label .al-co { font-size: 7pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.asset-label .al-model { font-size: 9pt; font-weight: 700; margin: 1mm 0; }
-.asset-label .al-bc { margin: 1mm 0; line-height: 0; }
-.asset-label .al-bc svg { max-width: 100%; height: auto; }
-.asset-label .al-meta { display: flex; justify-content: space-between; gap: 2mm; font-size: 7pt; margin-top: 1mm; }
+.asset-label { width: 58mm; box-sizing: border-box; border: .4mm solid #000; border-radius: 1.5mm; padding: 1.8mm 2.4mm;
+  display: flex; flex-direction: column; justify-content: center; gap: 1mm; overflow: hidden;
+  color: #000; background: #fff; font-family: var(--font); page-break-inside: avoid; }
+.asset-label > * { max-width: 100%; }
+/* Header: logo + company name, separated from the body by a hairline rule. */
+.asset-label .al-head { display: flex; align-items: center; gap: 1.6mm; width: 100%;
+  border-bottom: .3mm solid #000; padding-bottom: 1mm; }
+.asset-label .al-logo { height: 5.5mm; max-width: 30%; object-fit: contain; }
+.asset-label .al-co { flex: 1; min-width: 0; font-size: 7.5pt; font-weight: 800; letter-spacing: .02em;
+  text-transform: uppercase; line-height: 1.1; text-align: left; }
+.asset-label .al-head:only-child .al-co, .asset-label .al-co:only-child { text-align: center; }
+.asset-label .al-bc { width: 100%; text-align: center; line-height: 0; margin: .3mm 0; }
+/* Barcodes keep a viewBox, so max-width:100% scales an over-wide code DOWN to
+   the label instead of letting it overflow — height follows to stay in aspect. */
+.asset-label .al-bc svg { display: inline-block; max-width: 100%; height: auto; }
+.asset-label .al-model { font-size: 8pt; font-weight: 700; text-align: center; line-height: 1.15; }
+.asset-label .al-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: .5mm 2mm; width: 100%; font-size: 7pt; }
+.asset-label .al-cat { font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+.asset-label .al-sn { font-weight: 700; }
 
 .print-root { display: none; }
+
+/* Barcode-label designer (Settings) */
+.lbl-toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 4px; }
+.lbl-toggles label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+.lbl-toggles input { width: auto; }
+.lbl-preview { display: flex; justify-content: center; align-items: center; padding: 16px;
+  background: var(--surface-variant, #f2f2f7); border: 1px dashed var(--outline-variant); border-radius: 10px; }
 
 /* ---------- mobile / phone shell ---------- */
 /* IMPORTANT: use `screen` so these rules NEVER apply during print.

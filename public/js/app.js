@@ -188,6 +188,7 @@ const HANDOVER_DESIGN_CATALOG = [
 ];
 
 let obDefaultTplId = 'terminal';
+let obLogoDataUrl = null;
 
 function designSwatchesHtml(swatches) {
   return `<span class="ob-tpl-swatches">${(swatches || []).map((c) =>
@@ -387,6 +388,301 @@ const OB_TOUR = [
   },
 ];
 
+/* Localized copy for the onboarding tour, keyed by language → item id. Any
+   language/field not present falls back to the English source in OB_TOUR. */
+const OB_TOUR_I18N = {
+  tr: {
+  welcome: {
+    title: 'IT Asset Control\'e hoş geldiniz',
+    desc: 'Donanım, çalışan, zimmet evrakı, lisans, hat, onarım ve stok sayımı için kendi sunucunuzda çalışan ITAM çalışma alanınız — tam denetim iziyle.',
+    bullets: [
+      'Her şey tek uygulamada — dağınık Excel dosyaları yok',
+      'Birden çok görsel tasarımla yazdırılabilir zimmet tutanakları',
+      'Roller, arama ve uyarılar ilk günden hazır',
+    ],
+    tip: 'Kurulumdan sonra Yardım (?) ile bu turu tekrar oynatabilir veya ipuçlarını açıp kapatabilirsiniz.',
+  },
+  dashboard: {
+    title: 'Panel',
+    desc: 'Her sabah buradan başlayın — KPI\'lar, son zimmetler, EOL uyarıları ve lisans / stok bildirimleri.',
+    bullets: [
+      'Duruma göre varlık sayıları (Stokta, Zimmetli, Onarımda…)',
+      'Süresi dolan lisans ve kritik sarf uyarıları',
+      'Ömrü dolmuş cihazlara doğrudan geçiş',
+    ],
+    tip: 'Bildirimler (zil) her sayfadan aynı uyarıları gösterir.',
+  },
+  hardware: {
+    title: 'Donanım Envanteri',
+    desc: 'Her cihazın canlı kaydı — dizüstü, monitör, telefon, ağ cihazı ve daha fazlası.',
+    bullets: [
+      'Otomatik sıralı varlık etiketleri + QR / barkod etiketleri',
+      'Filtreler: durum, konum, kategori, yaşam döngüsü (EOL)',
+      'Toplu iade, onarım, etiket — ve Excel/CSV içe aktarma',
+    ],
+    tip: 'En hızlı ekleme için kenar çubuğundaki yeşil "Yeni Varlık" düğmesini kullanın.',
+  },
+  catalog: {
+    title: 'Ürün Kataloğu',
+    desc: 'Tüm formları besleyen merkezi listeler — marka/model serbest yazımıyla oluşan kaos yok.',
+    bullets: [
+      'Varsayılan yaşam süresi (ay) olan kategoriler',
+      'CPU / RAM / Depolama seçenek listeleri',
+      'Uygulama genelinde kullanılan konum ve departmanlar',
+    ],
+    tip: 'Yeni varlıklarda temiz açılır listeler için önce kataloğu güncelleyin.',
+  },
+  employees: {
+    title: 'Çalışanlar',
+    desc: 'Kimde ne var — cihazlar, yazılım koltukları, mobil hatlar ve imzalı belgeler.',
+    bullets: [
+      'Aktif varlıklar ve geçmiş zaman çizelgesiyle çalışan kartı',
+      'Zimmeti yeniden yazdırın veya güncel zimmet formu üretin',
+      'İmzalı PDF / fotoğraf taramalarını arşive yükleyin',
+    ],
+    tip: 'Bir çalışanı açın → Belgeler sekmesinde üretilmiş PDF\'ler ve imzalı taramalar bulunur.',
+  },
+  handover: {
+    title: 'Zimmet',
+    desc: 'Atomik sepet: çalışanı seçin, donanım ve/veya mobil hat ekleyin, onaylayın — yazdırın veya PDF indirin.',
+    bullets: [
+      'Kalem başına tek veya ayrı belgeler',
+      'Birden çok görsel zimmet tasarımı (Terminal, Classic…)',
+      'İsteğe bağlı iade bölümü ve düzenlenebilir yazdırma önizlemesi',
+    ],
+    tip: 'Form tasarımını Ayarlar\'dan seçin — ya da yazdırma penceresinde değiştirin.',
+  },
+  licenses: {
+    title: 'Yazılım ve Lisanslar',
+    desc: 'Atama / geri alma ile koltuk havuzları — donanımın yanında yazılım zimmeti.',
+    bullets: [
+      'Toplam ve kullanılan koltuk, atomik tahsis',
+      'Çalışan detayından veya lisans ekranından atama',
+      'Panelde 30 gün kala süre uyarıları',
+    ],
+    tip: 'Bir koltuğu geri almak onu anında başkasına açar.',
+  },
+  lines: {
+    title: 'Mobil Hatlar',
+    desc: 'Kurumsal SIM ve telefon numaraları — cihazlar gibi atanabilir ve zimmet formlarında listelenir.',
+    bullets: [
+      'Operatör, tarife, SIM seri no, aylık maliyet',
+      'Geçmişle birlikte atama / geri alma',
+      'Boş hatları zimmet sepetine ekleyin',
+    ],
+    tip: 'Zimmet sepetinde yalnızca Aktif ve zimmetsiz hatlar görünür.',
+  },
+  consumables: {
+    title: 'Sarf Malzemeleri',
+    desc: 'Toner, kablo, adaptör — kritik stok uyarılı stok seviyeleri.',
+    bullets: [
+      'Miktar ve yeniden sipariş eşiğini takip edin',
+      'Panelde kritik stok rozetleri',
+      'Tam varlık etiketlemesi olmadan basit düzeltmeler',
+    ],
+    tip: 'Minimum stok belirleyin; zil simgesi tükenmeden önce sizi uyarsın.',
+  },
+  maintenance: {
+    title: 'Bakım ve Onarım',
+    desc: 'Cihazı servise gönderin, ilerleme notu ekleyin, iade edin veya hurdaya ayırın — evrakıyla birlikte.',
+    bullets: [
+      'Onarım durumu, mümkünse önceki zimmeti geri yükler',
+      'Notlar cihaz geçmişine düşer',
+      'Onarım kaydına fatura / fotoğraf ekleyin',
+    ],
+    tip: 'Onarımı yalnızca bu ekrandan değil, varlık satırından da başlatabilirsiniz.',
+  },
+  stockcount: {
+    title: 'Stok Sayımı',
+    desc: 'Fiziksel envanter oturumları — barkod tarayın (kamera veya fotoğraf) ve canlı stoğa karşı kapatın.',
+    bullets: [
+      'Bir sayım açın, oturum açan herhangi bir cihazdan tarayın',
+      'Kapatınca bulunan / eksik / bilinmeyen filtreleri',
+      'Sonucun filtrelenmiş CSV çıktısı',
+    ],
+    tip: 'Telefonlarda, sayfayı yeniden oluşturmak yerine sürekli kamera taramayı tercih edin.',
+  },
+  reports: {
+    title: 'Raporlar',
+    desc: 'Hazır ve özel raporlar — kolonlar, filtreler, CSV çıktısı ve antetli yazdırma.',
+    bullets: [
+      'Yaygın BT soruları için hazır şablonlar',
+      'Birden çok veri kaynağından kendi raporunuzu oluşturun',
+      'Excel için CSV çıktısı veya şirket markasıyla yazdırma',
+    ],
+    tip: 'Önce hazır şablonları kullanın — sonra fikri özel bir rapora kopyalayın.',
+  },
+  users: {
+    title: 'BT Kullanıcıları ve Güvenlik',
+    desc: 'Ekibinizi doğru rolle davet edin. Marka ve şablonları Owner yönetir.',
+    bullets: [
+      'Owner / Admin / Helpdesk / Viewer',
+      'Denetim geçmişini kaybetmeden hesapları devre dışı bırakın',
+      'Sıkılaştırılmış varsayılanlar: CSP, hız limitleri, işlemsel yazma',
+    ],
+    tip: 'Yalnızca Owner, Ayarlar → zimmet tasarımları ve şirket logosunu açabilir.',
+  },
+  },
+  de: {
+    welcome: { title: 'Willkommen bei IT Asset Control', desc: 'Ihr selbst gehosteter ITAM-Arbeitsbereich für Hardware, Personen, Übergabebelege, Lizenzen, Rufnummern, Reparaturen und Inventuren — mit vollständigem Prüfprotokoll.', bullets: ['Alles in einer App — keine verstreuten Excel-Tabellen mehr', 'Druckbare Übergabeformulare in mehreren Designs', 'Rollen, Suche und Warnungen von Anfang an'], tip: 'Nach der Einrichtung können Sie diese Tour über Hilfe (?) erneut starten oder Tipps ein-/ausschalten.' },
+    dashboard: { title: 'Übersicht', desc: 'Starten Sie jeden Morgen hier — KPIs, letzte Übergaben, EOL-Warnungen und Lizenz-/Bestandshinweise.', bullets: ['Gerätezahlen nach Status (Auf Lager, Zugewiesen, Reparatur…)', 'Ablaufende Lizenzen und niedrige Verbrauchsmaterialien', 'Direkt zu überfälligen Lebenszyklus-Geräten springen'], tip: 'Öffnen Sie die Benachrichtigungen (Glocke) für dieselben Warnungen auf jeder Seite.' },
+    hardware: { title: 'Hardware-Inventar', desc: 'Das Live-Register aller Geräte — Laptops, Monitore, Telefone, Netzwerktechnik und mehr.', bullets: ['Automatische fortlaufende Asset-Tags + QR-/Barcode-Etiketten', 'Filter: Status, Standort, Kategorie, Lebenszyklus (EOL)', 'Sammel-Rückgabe, -Reparatur, -Etiketten — und Excel/CSV-Import'], tip: 'Nutzen Sie die grüne Schaltfläche „Neues Asset" in der Seitenleiste für die schnellste Erfassung.' },
+    catalog: { title: 'Produktkatalog', desc: 'Zentrale Listen, die jedes Formular speisen — kein Chaos durch frei eingegebene Marken.', bullets: ['Kategorien mit Standard-Lebensdauer (Monate)', 'CPU-/RAM-/Speicher-Optionslisten', 'App-weit verwendete Standorte und Abteilungen'], tip: 'Aktualisieren Sie zuerst den Katalog für saubere Dropdowns bei neuen Assets.' },
+    employees: { title: 'Mitarbeiter', desc: 'Wer was hat — Geräte, Softwareplätze, Rufnummern und unterschriebene Dokumente.', bullets: ['Mitarbeiterkarte mit aktiven Assets und Verlaufszeitachse', 'Übergabe erneut drucken oder aktuelles Zuweisungsformular erstellen', 'Unterschriebene PDF-/Foto-Scans ins Archiv hochladen'], tip: 'Öffnen Sie einen Mitarbeiter → Reiter Dokumente für erzeugte PDFs und Scans.' },
+    handover: { title: 'Übergabe (Zimmet)', desc: 'Atomarer Korb: Mitarbeiter wählen, Hardware und/oder Rufnummern hinzufügen, bestätigen — drucken oder als PDF herunterladen.', bullets: ['Ein oder getrennte Dokumente pro Position', 'Mehrere visuelle Übergabe-Designs (Terminal, Classic…)', 'Optionaler Rückgabebereich und bearbeitbare Druckvorschau'], tip: 'Wählen Sie das Formulardesign in den Einstellungen — oder wechseln Sie es im Druckdialog.' },
+    licenses: { title: 'Software & Lizenzen', desc: 'Platz-Pools mit Zuweisen/Entziehen — Software-Übergabe neben Hardware.', bullets: ['Gesamte vs. genutzte Plätze, atomare Zuweisung', 'Zuweisung aus Mitarbeiterdetail oder Lizenzansicht', '30-Tage-Ablaufwarnungen im Dashboard'], tip: 'Das Entziehen eines Platzes gibt ihn sofort für andere frei.' },
+    lines: { title: 'Rufnummern', desc: 'Firmen-SIMs und Rufnummern — wie Geräte zuweisbar und auf Übergabeformularen aufgeführt.', bullets: ['Anbieter, Tarif, SIM-Seriennummer, monatliche Kosten', 'Zuweisen/Zurücknehmen mit Verlauf', 'Freie Rufnummern in den Übergabekorb legen'], tip: 'Nur aktive und nicht zugewiesene Rufnummern erscheinen im Übergabekorb.' },
+    consumables: { title: 'Verbrauchsmaterial', desc: 'Toner, Kabel, Adapter — Bestände mit Mindestwarnungen.', bullets: ['Menge und Nachbestellschwelle verfolgen', 'Warnhinweise bei niedrigem Bestand im Dashboard', 'Einfache Anpassungen ohne vollständige Asset-Kennzeichnung'], tip: 'Legen Sie einen Mindestbestand fest, damit die Glocke vor dem Leerstand warnt.' },
+    maintenance: { title: 'Wartung & Reparatur', desc: 'Gerät zur Reparatur senden, Fortschrittsnotizen hinzufügen, zurückgeben oder verschrotten — mit angehängten Belegen.', bullets: ['Reparaturstatus stellt die vorherige Zuweisung wenn möglich wieder her', 'Notizen landen im Geräteverlauf', 'Rechnungen/Fotos an das Reparaturprotokoll anhängen'], tip: 'Starten Sie eine Reparatur aus der Asset-Zeile — nicht nur über diesen Bildschirm.' },
+    stockcount: { title: 'Inventur', desc: 'Physische Inventursitzungen — Barcodes scannen (Kamera oder Foto) und gegen den Live-Bestand abschließen.', bullets: ['Zählung öffnen, von jedem angemeldeten Gerät scannen', 'Gefunden-/Fehlt-/Unbekannt-Filter nach Abschluss', 'Gefiltertes CSV des Ergebnisses exportieren'], tip: 'Bevorzugen Sie auf Telefonen das kontinuierliche Kamera-Scannen.' },
+    reports: { title: 'Berichte', desc: 'Vordefinierte und benutzerdefinierte Berichte — Spalten, Filter, CSV-Export und Briefkopfdruck.', bullets: ['Fertige Vorlagen für gängige IT-Fragen', 'Erstellen Sie eigene aus mehreren Datenquellen', 'CSV für Excel exportieren oder mit Firmenlogo drucken'], tip: 'Nutzen Sie zuerst Vorlagen — klonen Sie die Idee dann in einen eigenen Bericht.' },
+    users: { title: 'IT-Benutzer & Sicherheit', desc: 'Laden Sie Ihr Team mit der richtigen Rolle ein. Der Owner steuert Branding und Vorlagen.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Konten deaktivieren ohne Prüfverlauf zu verlieren', 'Gehärtete Standards: CSP, Ratenlimits, transaktionale Schreibvorgänge'], tip: 'Nur der Owner kann Einstellungen → Übergabe-Designs und Firmenlogo öffnen.' },
+  },
+  fr: {
+    welcome: { title: 'Bienvenue dans IT Asset Control', desc: 'Votre espace ITAM auto-hébergé pour le matériel, les personnes, les documents de remise, les licences, les lignes, les réparations et les inventaires — avec une piste d\'audit complète.', bullets: ['Tout dans une seule app — fini les fichiers Excel éparpillés', 'Formulaires de remise imprimables avec plusieurs designs', 'Rôles, recherche et alertes dès le premier jour'], tip: 'Après la configuration, utilisez Aide (?) pour rejouer cette visite ou activer/désactiver les astuces.' },
+    dashboard: { title: 'Tableau de bord', desc: 'Commencez ici chaque matin — indicateurs, dernières remises, alertes de fin de vie et de licences/stock.', bullets: ['Nombre d\'appareils par statut (En stock, Attribué, Réparation…)', 'Licences expirant et consommables faibles', 'Accédez directement aux appareils en fin de vie dépassée'], tip: 'Ouvrez les notifications (cloche) pour les mêmes alertes depuis n\'importe quelle page.' },
+    hardware: { title: 'Inventaire matériel', desc: 'Le registre en direct de chaque appareil — ordinateurs, écrans, téléphones, équipements réseau et plus.', bullets: ['Étiquettes d\'actifs séquentielles automatiques + étiquettes QR/code-barres', 'Filtres : statut, emplacement, catégorie, cycle de vie (EOL)', 'Retour, réparation, étiquettes en masse — et import Excel/CSV'], tip: 'Utilisez le bouton vert « Nouvel actif » dans la barre latérale pour l\'ajout le plus rapide.' },
+    catalog: { title: 'Catalogue produits', desc: 'Listes centrales qui alimentent chaque formulaire — pas de chaos de marques saisies librement.', bullets: ['Catégories avec durée de vie par défaut (mois)', 'Listes d\'options CPU/RAM/Stockage', 'Emplacements et services utilisés dans toute l\'app'], tip: 'Mettez d\'abord le catalogue à jour pour des menus déroulants propres.' },
+    employees: { title: 'Employés', desc: 'Qui détient quoi — appareils, licences logicielles, lignes mobiles et documents signés.', bullets: ['Fiche employé avec actifs actifs et chronologie', 'Réimprimer la remise ou générer un formulaire d\'attribution actuel', 'Téléverser des scans PDF/photo signés dans l\'archive'], tip: 'Ouvrez un employé → onglet Documents pour les PDF générés et les scans signés.' },
+    handover: { title: 'Remise (Zimmet)', desc: 'Panier atomique : choisissez un employé, ajoutez du matériel et/ou des lignes, confirmez — imprimez ou téléchargez le PDF.', bullets: ['Un document unique ou séparé par article', 'Plusieurs designs visuels de remise (Terminal, Classic…)', 'Section de retour optionnelle et aperçu d\'impression modifiable'], tip: 'Choisissez le design du formulaire dans les Paramètres — ou changez-le dans la boîte d\'impression.' },
+    licenses: { title: 'Logiciels et licences', desc: 'Pools de sièges avec attribution/révocation — remise logicielle à côté du matériel.', bullets: ['Sièges totaux vs utilisés, attribution atomique', 'Attribuer depuis la fiche employé ou l\'écran des licences', 'Alertes d\'expiration à 30 jours sur le tableau de bord'], tip: 'Révoquer un siège le libère immédiatement pour quelqu\'un d\'autre.' },
+    lines: { title: 'Lignes mobiles', desc: 'SIM et numéros de l\'entreprise — attribuables comme des appareils et listés sur les formulaires de remise.', bullets: ['Opérateur, forfait, numéro de série SIM, coût mensuel', 'Attribuer/reprendre avec historique', 'Ajouter des lignes libres au panier de remise'], tip: 'Seules les lignes actives et non attribuées apparaissent dans le panier.' },
+    consumables: { title: 'Consommables', desc: 'Toner, câbles, adaptateurs — niveaux de stock avec alertes minimales.', bullets: ['Suivre la quantité et le seuil de réapprovisionnement', 'Puces de stock faible sur le tableau de bord', 'Ajustements simples sans étiquetage complet'], tip: 'Définissez un stock minimum pour que la cloche vous prévienne avant la rupture.' },
+    maintenance: { title: 'Maintenance et réparation', desc: 'Envoyez un appareil en réparation, ajoutez des notes de suivi, retournez ou mettez au rebut — avec documents joints.', bullets: ['L\'état de réparation restaure l\'attribution précédente si possible', 'Les notes apparaissent dans l\'historique de l\'appareil', 'Joignez factures/photos au journal de réparation'], tip: 'Démarrez une réparation depuis la ligne de l\'actif — pas seulement depuis cet écran.' },
+    stockcount: { title: 'Inventaire', desc: 'Sessions d\'inventaire physique — scannez les codes-barres (caméra ou photo) et clôturez face au stock en direct.', bullets: ['Ouvrez un comptage, scannez depuis tout appareil connecté', 'Filtres trouvé/manquant/inconnu à la clôture', 'Exportez le CSV filtré du résultat'], tip: 'Sur téléphone, préférez le scan caméra continu.' },
+    reports: { title: 'Rapports', desc: 'Rapports prédéfinis et personnalisés — colonnes, filtres, export CSV et impression à en-tête.', bullets: ['Modèles prêts pour les questions IT courantes', 'Créez le vôtre à partir de plusieurs sources', 'Exportez en CSV pour Excel ou imprimez avec la marque'], tip: 'Utilisez d\'abord les modèles — puis clonez l\'idée dans un rapport personnalisé.' },
+    users: { title: 'Utilisateurs IT et sécurité', desc: 'Invitez votre équipe avec le bon rôle. L\'Owner contrôle la marque et les modèles.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Désactivez des comptes sans perdre l\'historique d\'audit', 'Valeurs par défaut renforcées : CSP, limites de débit, écritures transactionnelles'], tip: 'Seul l\'Owner peut ouvrir Paramètres → designs de remise et logo.' },
+  },
+  es: {
+    welcome: { title: 'Bienvenido a IT Asset Control', desc: 'Su espacio ITAM autoalojado para hardware, personas, documentos de entrega, licencias, líneas, reparaciones e inventarios — con auditoría completa.', bullets: ['Todo en una app — sin hojas de Excel dispersas', 'Formularios de entrega imprimibles con varios diseños', 'Roles, búsqueda y alertas desde el primer día'], tip: 'Tras la configuración, use Ayuda (?) para repetir este recorrido o activar/desactivar consejos.' },
+    dashboard: { title: 'Panel', desc: 'Empiece aquí cada mañana — KPIs, últimas entregas, avisos de fin de vida y de licencias/stock.', bullets: ['Recuento de dispositivos por estado (En stock, Asignado, Reparación…)', 'Licencias por vencer y consumibles bajos', 'Vaya directo a dispositivos con ciclo de vida vencido'], tip: 'Abra Notificaciones (campana) para las mismas alertas desde cualquier página.' },
+    hardware: { title: 'Inventario de hardware', desc: 'El registro en vivo de cada dispositivo — portátiles, monitores, teléfonos, equipos de red y más.', bullets: ['Etiquetas de activos secuenciales automáticas + etiquetas QR/código de barras', 'Filtros: estado, ubicación, categoría, ciclo de vida (EOL)', 'Devolución, reparación y etiquetas masivas — e importación Excel/CSV'], tip: 'Use el botón verde «Nuevo activo» en la barra lateral para añadir más rápido.' },
+    catalog: { title: 'Catálogo de productos', desc: 'Listas centrales que alimentan cada formulario — sin caos de marcas escritas a mano.', bullets: ['Categorías con vida útil predeterminada (meses)', 'Listas de opciones de CPU/RAM/Almacenamiento', 'Ubicaciones y departamentos usados en toda la app'], tip: 'Actualice primero el catálogo para menús desplegables limpios.' },
+    employees: { title: 'Empleados', desc: 'Quién tiene qué — dispositivos, puestos de software, líneas móviles y documentos firmados.', bullets: ['Ficha de empleado con activos activos y línea de tiempo', 'Reimprimir la entrega o generar un formulario de asignación actual', 'Suba escaneos PDF/foto firmados al archivo'], tip: 'Abra un empleado → pestaña Documentos para PDFs generados y escaneos.' },
+    handover: { title: 'Entrega (Zimmet)', desc: 'Cesta atómica: elija un empleado, añada hardware y/o líneas, confirme — imprima o descargue PDF.', bullets: ['Documento único o separado por artículo', 'Varios diseños visuales de entrega (Terminal, Classic…)', 'Sección de devolución opcional y vista previa editable'], tip: 'Elija el diseño del formulario en Ajustes — o cámbielo en el diálogo de impresión.' },
+    licenses: { title: 'Software y licencias', desc: 'Grupos de puestos con asignar/revocar — entrega de software junto al hardware.', bullets: ['Puestos totales vs usados, asignación atómica', 'Asignar desde el detalle del empleado o la pantalla de licencias', 'Alertas de vencimiento a 30 días en el panel'], tip: 'Revocar un puesto lo libera de inmediato para otra persona.' },
+    lines: { title: 'Líneas móviles', desc: 'SIM y números de la empresa — asignables como dispositivos y listados en los formularios de entrega.', bullets: ['Operador, plan, número de serie SIM, coste mensual', 'Asignar/recuperar con historial', 'Añadir líneas libres a la cesta de entrega'], tip: 'Solo las líneas activas y sin asignar aparecen en la cesta.' },
+    consumables: { title: 'Consumibles', desc: 'Tóner, cables, adaptadores — niveles de stock con alertas mínimas.', bullets: ['Seguir cantidad y umbral de reposición', 'Indicadores de stock bajo en el panel', 'Ajustes simples sin etiquetado completo'], tip: 'Establezca stock mínimo para que la campana avise antes de agotarse.' },
+    maintenance: { title: 'Mantenimiento y reparación', desc: 'Envíe un dispositivo a servicio, añada notas de progreso, devuelva o deseche — con documentación adjunta.', bullets: ['El estado de reparación restaura la asignación previa si es posible', 'Las notas van al historial del dispositivo', 'Adjunte facturas/fotos al registro de reparación'], tip: 'Inicie una reparación desde la fila del activo — no solo desde esta pantalla.' },
+    stockcount: { title: 'Recuento de stock', desc: 'Sesiones de inventario físico — escanee códigos (cámara o foto) y cierre contra el stock en vivo.', bullets: ['Abra un recuento, escanee desde cualquier dispositivo conectado', 'Filtros encontrado/faltante/desconocido al cerrar', 'Exporte el CSV filtrado del resultado'], tip: 'En móviles, prefiera el escaneo continuo con cámara.' },
+    reports: { title: 'Informes', desc: 'Informes predefinidos y personalizados — columnas, filtros, exportación CSV e impresión con membrete.', bullets: ['Plantillas listas para preguntas comunes de TI', 'Cree el suyo desde varias fuentes de datos', 'Exporte CSV para Excel o imprima con la marca'], tip: 'Use primero las plantillas — luego clone la idea en un informe personalizado.' },
+    users: { title: 'Usuarios TI y seguridad', desc: 'Invite a su equipo con el rol correcto. El Owner controla marca y plantillas.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Desactive cuentas sin perder el historial de auditoría', 'Valores reforzados: CSP, límites de tasa, escrituras transaccionales'], tip: 'Solo el Owner puede abrir Ajustes → diseños de entrega y logo.' },
+  },
+  it: {
+    welcome: { title: 'Benvenuto in IT Asset Control', desc: 'Il tuo spazio ITAM self-hosted per hardware, persone, documenti di consegna, licenze, linee, riparazioni e inventari — con audit trail completo.', bullets: ['Tutto in un\'app — niente più fogli Excel sparsi', 'Moduli di consegna stampabili con più design', 'Ruoli, ricerca e avvisi fin dal primo giorno'], tip: 'Dopo la configurazione, usa Aiuto (?) per rivedere questo tour o attivare/disattivare i suggerimenti.' },
+    dashboard: { title: 'Pannello', desc: 'Inizia qui ogni mattina — KPI, ultime consegne, avvisi di fine vita e di licenze/scorte.', bullets: ['Conteggio dispositivi per stato (In stock, Assegnato, Riparazione…)', 'Licenze in scadenza e consumabili scarsi', 'Vai direttamente ai dispositivi a fine vita scaduti'], tip: 'Apri Notifiche (campana) per gli stessi avvisi da qualsiasi pagina.' },
+    hardware: { title: 'Inventario hardware', desc: 'Il registro live di ogni dispositivo — laptop, monitor, telefoni, apparati di rete e altro.', bullets: ['Tag asset sequenziali automatici + etichette QR/codice a barre', 'Filtri: stato, sede, categoria, ciclo di vita (EOL)', 'Reso, riparazione, etichette in blocco — e import Excel/CSV'], tip: 'Usa il pulsante verde «Nuovo asset» nella barra laterale per l\'aggiunta più rapida.' },
+    catalog: { title: 'Catalogo prodotti', desc: 'Elenchi centrali che alimentano ogni modulo — niente caos di marche digitate a mano.', bullets: ['Categorie con durata di vita predefinita (mesi)', 'Elenchi di opzioni CPU/RAM/Storage', 'Sedi e reparti usati in tutta l\'app'], tip: 'Aggiorna prima il catalogo per menu a discesa puliti.' },
+    employees: { title: 'Dipendenti', desc: 'Chi ha cosa — dispositivi, postazioni software, linee mobili e documenti firmati.', bullets: ['Scheda dipendente con asset attivi e cronologia', 'Ristampa la consegna o genera un modulo di assegnazione attuale', 'Carica scansioni PDF/foto firmate nell\'archivio'], tip: 'Apri un dipendente → scheda Documenti per PDF generati e scansioni.' },
+    handover: { title: 'Consegna (Zimmet)', desc: 'Carrello atomico: scegli un dipendente, aggiungi hardware e/o linee, conferma — stampa o scarica il PDF.', bullets: ['Documento unico o separato per articolo', 'Più design visivi di consegna (Terminal, Classic…)', 'Sezione di reso opzionale e anteprima di stampa modificabile'], tip: 'Scegli il design del modulo nelle Impostazioni — o cambialo nella finestra di stampa.' },
+    licenses: { title: 'Software e licenze', desc: 'Pool di postazioni con assegna/revoca — consegna software accanto all\'hardware.', bullets: ['Postazioni totali vs usate, assegnazione atomica', 'Assegna dal dettaglio dipendente o dalla schermata licenze', 'Avvisi di scadenza a 30 giorni sul pannello'], tip: 'Revocare una postazione la libera subito per un altro.' },
+    lines: { title: 'Linee mobili', desc: 'SIM e numeri aziendali — assegnabili come dispositivi ed elencati sui moduli di consegna.', bullets: ['Operatore, piano, seriale SIM, costo mensile', 'Assegna/riprendi con cronologia', 'Aggiungi linee libere al carrello di consegna'], tip: 'Solo le linee attive e non assegnate compaiono nel carrello.' },
+    consumables: { title: 'Consumabili', desc: 'Toner, cavi, adattatori — livelli di scorta con avvisi minimi.', bullets: ['Traccia quantità e soglia di riordino', 'Indicatori di scorta bassa sul pannello', 'Regolazioni semplici senza etichettatura completa'], tip: 'Imposta una scorta minima così la campana ti avvisa prima dell\'esaurimento.' },
+    maintenance: { title: 'Manutenzione e riparazione', desc: 'Invia un dispositivo in assistenza, aggiungi note di avanzamento, restituisci o rottama — con documenti allegati.', bullets: ['Lo stato di riparazione ripristina l\'assegnazione precedente se possibile', 'Le note finiscono nella cronologia del dispositivo', 'Allega fatture/foto al registro di riparazione'], tip: 'Avvia una riparazione dalla riga dell\'asset — non solo da questa schermata.' },
+    stockcount: { title: 'Inventario', desc: 'Sessioni di inventario fisico — scansiona i codici (fotocamera o foto) e chiudi rispetto alle scorte live.', bullets: ['Apri un conteggio, scansiona da qualsiasi dispositivo connesso', 'Filtri trovato/mancante/sconosciuto alla chiusura', 'Esporta il CSV filtrato del risultato'], tip: 'Su telefono, preferisci la scansione continua con fotocamera.' },
+    reports: { title: 'Report', desc: 'Report predefiniti e personalizzati — colonne, filtri, export CSV e stampa intestata.', bullets: ['Modelli pronti per le domande IT comuni', 'Crea il tuo da più fonti dati', 'Esporta CSV per Excel o stampa con il marchio'], tip: 'Usa prima i modelli — poi clona l\'idea in un report personalizzato.' },
+    users: { title: 'Utenti IT e sicurezza', desc: 'Invita il team con il ruolo giusto. L\'Owner controlla brand e modelli.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Disattiva account senza perdere la cronologia di audit', 'Impostazioni rafforzate: CSP, limiti di frequenza, scritture transazionali'], tip: 'Solo l\'Owner può aprire Impostazioni → design di consegna e logo.' },
+  },
+  pt: {
+    welcome: { title: 'Bem-vindo ao IT Asset Control', desc: 'Seu espaço ITAM auto-hospedado para hardware, pessoas, documentos de entrega, licenças, linhas, reparos e inventários — com trilha de auditoria completa.', bullets: ['Tudo em um app — sem planilhas de Excel espalhadas', 'Formulários de entrega imprimíveis com vários designs', 'Funções, busca e alertas desde o primeiro dia'], tip: 'Após a configuração, use Ajuda (?) para repetir este tour ou ativar/desativar dicas.' },
+    dashboard: { title: 'Painel', desc: 'Comece aqui toda manhã — KPIs, últimas entregas, avisos de fim de vida e de licenças/estoque.', bullets: ['Contagem de dispositivos por status (Em estoque, Atribuído, Reparo…)', 'Licenças a vencer e consumíveis baixos', 'Vá direto para dispositivos com ciclo de vida vencido'], tip: 'Abra Notificações (sino) para os mesmos alertas em qualquer página.' },
+    hardware: { title: 'Inventário de hardware', desc: 'O registro ao vivo de cada dispositivo — notebooks, monitores, telefones, equipamentos de rede e mais.', bullets: ['Etiquetas de ativo sequenciais automáticas + etiquetas QR/código de barras', 'Filtros: status, local, categoria, ciclo de vida (EOL)', 'Devolução, reparo e etiquetas em massa — e importação Excel/CSV'], tip: 'Use o botão verde «Novo ativo» na barra lateral para adicionar mais rápido.' },
+    catalog: { title: 'Catálogo de produtos', desc: 'Listas centrais que alimentam cada formulário — sem caos de marcas digitadas à mão.', bullets: ['Categorias com vida útil padrão (meses)', 'Listas de opções de CPU/RAM/Armazenamento', 'Locais e departamentos usados em todo o app'], tip: 'Atualize o catálogo primeiro para menus suspensos limpos.' },
+    employees: { title: 'Funcionários', desc: 'Quem tem o quê — dispositivos, licenças de software, linhas móveis e documentos assinados.', bullets: ['Cartão do funcionário com ativos ativos e linha do tempo', 'Reimprima a entrega ou gere um formulário de atribuição atual', 'Envie digitalizações PDF/foto assinadas para o arquivo'], tip: 'Abra um funcionário → aba Documentos para PDFs gerados e digitalizações.' },
+    handover: { title: 'Entrega (Zimmet)', desc: 'Cesta atômica: escolha um funcionário, adicione hardware e/ou linhas, confirme — imprima ou baixe o PDF.', bullets: ['Documento único ou separado por item', 'Vários designs visuais de entrega (Terminal, Classic…)', 'Seção de devolução opcional e pré-visualização editável'], tip: 'Escolha o design do formulário nas Configurações — ou troque na caixa de impressão.' },
+    licenses: { title: 'Software e licenças', desc: 'Pools de assentos com atribuir/revogar — entrega de software ao lado do hardware.', bullets: ['Assentos totais vs usados, atribuição atômica', 'Atribua pelo detalhe do funcionário ou tela de licenças', 'Alertas de expiração de 30 dias no painel'], tip: 'Revogar um assento o libera imediatamente para outra pessoa.' },
+    lines: { title: 'Linhas móveis', desc: 'SIMs e números da empresa — atribuíveis como dispositivos e listados nos formulários de entrega.', bullets: ['Operadora, plano, série do SIM, custo mensal', 'Atribua/retome com histórico', 'Adicione linhas livres à cesta de entrega'], tip: 'Apenas linhas ativas e não atribuídas aparecem na cesta.' },
+    consumables: { title: 'Consumíveis', desc: 'Toner, cabos, adaptadores — níveis de estoque com alertas mínimos.', bullets: ['Acompanhe quantidade e limite de reposição', 'Selos de estoque baixo no painel', 'Ajustes simples sem etiquetagem completa'], tip: 'Defina estoque mínimo para o sino avisar antes de acabar.' },
+    maintenance: { title: 'Manutenção e reparo', desc: 'Envie um dispositivo para assistência, adicione notas de progresso, devolva ou descarte — com documentação anexada.', bullets: ['O estado de reparo restaura a atribuição anterior quando possível', 'As notas vão para o histórico do dispositivo', 'Anexe faturas/fotos ao registro de reparo'], tip: 'Inicie um reparo pela linha do ativo — não apenas por esta tela.' },
+    stockcount: { title: 'Contagem de estoque', desc: 'Sessões de inventário físico — escaneie códigos (câmera ou foto) e feche contra o estoque ao vivo.', bullets: ['Abra uma contagem, escaneie de qualquer dispositivo conectado', 'Filtros encontrado/faltante/desconhecido ao fechar', 'Exporte o CSV filtrado do resultado'], tip: 'Em celulares, prefira a leitura contínua por câmera.' },
+    reports: { title: 'Relatórios', desc: 'Relatórios predefinidos e personalizados — colunas, filtros, exportação CSV e impressão com timbre.', bullets: ['Modelos prontos para perguntas comuns de TI', 'Crie o seu a partir de várias fontes de dados', 'Exporte CSV para Excel ou imprima com a marca'], tip: 'Use primeiro os modelos — depois clone a ideia em um relatório personalizado.' },
+    users: { title: 'Usuários de TI e segurança', desc: 'Convide sua equipe com a função certa. O Owner controla marca e modelos.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Desative contas sem perder o histórico de auditoria', 'Padrões reforçados: CSP, limites de taxa, gravações transacionais'], tip: 'Somente o Owner pode abrir Configurações → designs de entrega e logo.' },
+  },
+  nl: {
+    welcome: { title: 'Welkom bij IT Asset Control', desc: 'Je zelf-gehoste ITAM-werkruimte voor hardware, personen, overdrachtsdocumenten, licenties, lijnen, reparaties en tellingen — met volledig audittraject.', bullets: ['Alles in één app — geen verspreide Excel-bestanden meer', 'Afdrukbare overdrachtsformulieren met meerdere ontwerpen', 'Rollen, zoeken en meldingen vanaf dag één'], tip: 'Gebruik na de installatie Help (?) om deze rondleiding opnieuw te bekijken of tips aan/uit te zetten.' },
+    dashboard: { title: 'Dashboard', desc: 'Begin hier elke ochtend — KPI\'s, recente overdrachten, EOL-waarschuwingen en licentie-/voorraadmeldingen.', bullets: ['Aantal apparaten per status (Op voorraad, Toegewezen, Reparatie…)', 'Verlopende licenties en lage verbruiksartikelen', 'Ga direct naar verlopen levenscyclusapparaten'], tip: 'Open Meldingen (bel) voor dezelfde waarschuwingen op elke pagina.' },
+    hardware: { title: 'Hardware-inventaris', desc: 'Het live register van elk apparaat — laptops, monitoren, telefoons, netwerkapparatuur en meer.', bullets: ['Automatische opeenvolgende asset-tags + QR-/barcode-labels', 'Filters: status, locatie, categorie, levenscyclus (EOL)', 'Bulk retour, reparatie, labels — en Excel/CSV-import'], tip: 'Gebruik de groene knop «Nieuw item» in de zijbalk voor de snelste toevoeging.' },
+    catalog: { title: 'Productcatalogus', desc: 'Centrale lijsten die elk formulier voeden — geen chaos van vrij getypte merken.', bullets: ['Categorieën met standaard levensduur (maanden)', 'CPU-/RAM-/opslag-optielijsten', 'Locaties en afdelingen die overal in de app worden gebruikt'], tip: 'Werk eerst de catalogus bij voor schone keuzelijsten.' },
+    employees: { title: 'Medewerkers', desc: 'Wie heeft wat — apparaten, softwareplaatsen, mobiele lijnen en ondertekende documenten.', bullets: ['Medewerkerkaart met actieve items en tijdlijn', 'Overdracht opnieuw afdrukken of huidig toewijzingsformulier maken', 'Ondertekende PDF-/fotoscans uploaden naar het archief'], tip: 'Open een medewerker → tabblad Documenten voor gegenereerde PDF\'s en scans.' },
+    handover: { title: 'Overdracht (Zimmet)', desc: 'Atomair mandje: kies een medewerker, voeg hardware en/of lijnen toe, bevestig — afdrukken of pdf downloaden.', bullets: ['Eén of aparte documenten per item', 'Meerdere visuele overdrachtsontwerpen (Terminal, Classic…)', 'Optionele retoursectie en bewerkbaar afdrukvoorbeeld'], tip: 'Kies het formulierontwerp in Instellingen — of wissel het in het afdrukvenster.' },
+    licenses: { title: 'Software en licenties', desc: 'Zetel-pools met toewijzen/intrekken — softwareoverdracht naast hardware.', bullets: ['Totaal vs gebruikte zetels, atomaire toewijzing', 'Toewijzen vanuit medewerkerdetail of licentiescherm', 'Vervalmeldingen van 30 dagen op het dashboard'], tip: 'Een zetel intrekken maakt deze direct vrij voor iemand anders.' },
+    lines: { title: 'Mobiele lijnen', desc: 'Bedrijfs-simkaarten en nummers — toewijsbaar als apparaten en vermeld op overdrachtsformulieren.', bullets: ['Provider, abonnement, simkaart-serienummer, maandkosten', 'Toewijzen/terugnemen met historie', 'Vrije lijnen toevoegen aan het overdrachtsmandje'], tip: 'Alleen actieve en niet-toegewezen lijnen verschijnen in het mandje.' },
+    consumables: { title: 'Verbruiksartikelen', desc: 'Toner, kabels, adapters — voorraadniveaus met minimummeldingen.', bullets: ['Volg hoeveelheid en besteldrempel', 'Waarschuwingen voor lage voorraad op het dashboard', 'Eenvoudige aanpassingen zonder volledige labeling'], tip: 'Stel een minimumvoorraad in zodat de bel je waarschuwt voordat het op is.' },
+    maintenance: { title: 'Onderhoud en reparatie', desc: 'Stuur een apparaat naar reparatie, voeg voortgangsnotities toe, retourneer of sloop — met bijgevoegde documenten.', bullets: ['Reparatiestatus herstelt indien mogelijk de vorige toewijzing', 'Notities komen in de apparaatgeschiedenis', 'Voeg facturen/foto\'s toe aan het reparatielogboek'], tip: 'Start een reparatie vanaf de itemrij — niet alleen vanaf dit scherm.' },
+    stockcount: { title: 'Voorraadtelling', desc: 'Fysieke inventarisatiesessies — scan barcodes (camera of foto) en sluit af tegen de live voorraad.', bullets: ['Open een telling, scan vanaf elk aangemeld apparaat', 'Gevonden-/ontbrekend-/onbekend-filters bij afsluiten', 'Exporteer de gefilterde CSV van het resultaat'], tip: 'Geef op telefoons de voorkeur aan continu camerascannen.' },
+    reports: { title: 'Rapporten', desc: 'Vooraf ingestelde en aangepaste rapporten — kolommen, filters, CSV-export en briefhoofdafdruk.', bullets: ['Kant-en-klare sjablonen voor veelvoorkomende IT-vragen', 'Bouw je eigen uit meerdere gegevensbronnen', 'Exporteer CSV voor Excel of druk af met bedrijfsmerk'], tip: 'Gebruik eerst sjablonen — kloon het idee daarna in een aangepast rapport.' },
+    users: { title: 'IT-gebruikers en beveiliging', desc: 'Nodig je team uit met de juiste rol. De Owner beheert branding en sjablonen.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Schakel accounts uit zonder audithistorie te verliezen', 'Verharde standaarden: CSP, snelheidslimieten, transactionele schrijfacties'], tip: 'Alleen de Owner kan Instellingen → overdrachtsontwerpen en logo openen.' },
+  },
+  pl: {
+    welcome: { title: 'Witaj w IT Asset Control', desc: 'Twoja samodzielnie hostowana przestrzeń ITAM dla sprzętu, osób, dokumentów przekazania, licencji, linii, napraw i inwentaryzacji — z pełnym śladem audytu.', bullets: ['Wszystko w jednej aplikacji — koniec z rozproszonymi arkuszami Excel', 'Drukowalne formularze przekazania w wielu wzorach', 'Role, wyszukiwanie i alerty od pierwszego dnia'], tip: 'Po konfiguracji użyj Pomocy (?), aby ponownie odtworzyć ten przewodnik lub włączyć/wyłączyć wskazówki.' },
+    dashboard: { title: 'Panel', desc: 'Zaczynaj tu każdego ranka — wskaźniki, ostatnie przekazania, ostrzeżenia EOL oraz alerty licencji/zapasów.', bullets: ['Liczba urządzeń wg statusu (W magazynie, Przypisane, Naprawa…)', 'Wygasające licencje i niskie materiały eksploatacyjne', 'Przejdź od razu do urządzeń po terminie EOL'], tip: 'Otwórz Powiadomienia (dzwonek), aby zobaczyć te same alerty z każdej strony.' },
+    hardware: { title: 'Inwentarz sprzętu', desc: 'Aktualny rejestr każdego urządzenia — laptopy, monitory, telefony, sprzęt sieciowy i więcej.', bullets: ['Automatyczne sekwencyjne etykiety zasobów + etykiety QR/kod kreskowy', 'Filtry: status, lokalizacja, kategoria, cykl życia (EOL)', 'Zbiorczy zwrot, naprawa, etykiety — oraz import Excel/CSV'], tip: 'Użyj zielonego przycisku „Nowy zasób" na pasku bocznym, aby dodać najszybciej.' },
+    catalog: { title: 'Katalog produktów', desc: 'Centralne listy zasilające każdy formularz — bez chaosu ręcznie wpisywanych marek.', bullets: ['Kategorie z domyślnym czasem życia (miesiące)', 'Listy opcji CPU/RAM/Dysk', 'Lokalizacje i działy używane w całej aplikacji'], tip: 'Najpierw zaktualizuj katalog, aby mieć czyste listy rozwijane.' },
+    employees: { title: 'Pracownicy', desc: 'Kto co ma — urządzenia, stanowiska oprogramowania, linie komórkowe i podpisane dokumenty.', bullets: ['Karta pracownika z aktywnymi zasobami i osią czasu', 'Wydrukuj ponownie przekazanie lub wygeneruj bieżący formularz przydziału', 'Prześlij podpisane skany PDF/zdjęcia do archiwum'], tip: 'Otwórz pracownika → zakładka Dokumenty dla wygenerowanych PDF i skanów.' },
+    handover: { title: 'Przekazanie (Zimmet)', desc: 'Atomowy koszyk: wybierz pracownika, dodaj sprzęt i/lub linie, potwierdź — drukuj lub pobierz PDF.', bullets: ['Jeden lub osobne dokumenty na pozycję', 'Wiele wzorów wizualnych przekazania (Terminal, Classic…)', 'Opcjonalna sekcja zwrotu i edytowalny podgląd wydruku'], tip: 'Wybierz wzór formularza w Ustawieniach — lub zmień go w oknie drukowania.' },
+    licenses: { title: 'Oprogramowanie i licencje', desc: 'Pule stanowisk z przypisz/cofnij — przekazanie oprogramowania obok sprzętu.', bullets: ['Stanowiska łącznie vs użyte, atomowe przypisanie', 'Przypisz z detalu pracownika lub ekranu licencji', '30-dniowe alerty wygaśnięcia na panelu'], tip: 'Cofnięcie stanowiska natychmiast zwalnia je dla kogoś innego.' },
+    lines: { title: 'Linie komórkowe', desc: 'Firmowe karty SIM i numery — przypisywalne jak urządzenia i wymienione na formularzach przekazania.', bullets: ['Operator, taryfa, numer seryjny SIM, koszt miesięczny', 'Przypisz/odbierz z historią', 'Dodaj wolne linie do koszyka przekazania'], tip: 'W koszyku pojawiają się tylko aktywne i nieprzypisane linie.' },
+    consumables: { title: 'Materiały eksploatacyjne', desc: 'Toner, kable, adaptery — poziomy zapasów z alertami minimalnymi.', bullets: ['Śledź ilość i próg ponownego zamówienia', 'Oznaczenia niskiego stanu na panelu', 'Proste korekty bez pełnego etykietowania'], tip: 'Ustaw minimalny stan, aby dzwonek ostrzegł przed wyczerpaniem.' },
+    maintenance: { title: 'Konserwacja i naprawa', desc: 'Wyślij urządzenie do serwisu, dodaj notatki postępu, zwróć lub zezłomuj — z załączoną dokumentacją.', bullets: ['Stan naprawy przywraca poprzedni przydział, gdy to możliwe', 'Notatki trafiają do historii urządzenia', 'Załącz faktury/zdjęcia do dziennika napraw'], tip: 'Rozpocznij naprawę z wiersza zasobu — nie tylko z tego ekranu.' },
+    stockcount: { title: 'Inwentaryzacja', desc: 'Sesje inwentaryzacji fizycznej — skanuj kody (aparat lub zdjęcie) i zamknij wobec bieżącego stanu.', bullets: ['Otwórz spis, skanuj z dowolnego zalogowanego urządzenia', 'Filtry znalezione/brakujące/nieznane po zamknięciu', 'Eksportuj przefiltrowany CSV wyniku'], tip: 'Na telefonach preferuj ciągłe skanowanie aparatem.' },
+    reports: { title: 'Raporty', desc: 'Gotowe i niestandardowe raporty — kolumny, filtry, eksport CSV i wydruk z papierem firmowym.', bullets: ['Gotowe szablony dla typowych pytań IT', 'Zbuduj własny z wielu źródeł danych', 'Eksportuj CSV do Excela lub drukuj z marką'], tip: 'Najpierw użyj szablonów — potem sklonuj pomysł do raportu niestandardowego.' },
+    users: { title: 'Użytkownicy IT i bezpieczeństwo', desc: 'Zaproś zespół z właściwą rolą. Owner kontroluje markę i szablony.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Wyłączaj konta bez utraty historii audytu', 'Wzmocnione domyślne: CSP, limity zapytań, zapisy transakcyjne'], tip: 'Tylko Owner może otworzyć Ustawienia → wzory przekazania i logo.' },
+  },
+  ru: {
+    welcome: { title: 'Добро пожаловать в IT Asset Control', desc: 'Ваше локальное ITAM-пространство для оборудования, сотрудников, актов передачи, лицензий, линий, ремонтов и инвентаризаций — с полным журналом аудита.', bullets: ['Всё в одном приложении — больше никаких разрозненных таблиц Excel', 'Печатные акты передачи с несколькими дизайнами', 'Роли, поиск и оповещения с первого дня'], tip: 'После настройки используйте Помощь (?), чтобы повторить тур или включить/выключить подсказки.' },
+    dashboard: { title: 'Панель', desc: 'Начинайте каждое утро отсюда — KPI, последние передачи, предупреждения EOL и лицензий/запасов.', bullets: ['Количество устройств по статусу (На складе, Назначено, Ремонт…)', 'Истекающие лицензии и низкие расходники', 'Переходите сразу к устройствам с истёкшим сроком службы'], tip: 'Откройте Уведомления (колокол), чтобы видеть те же оповещения с любой страницы.' },
+    hardware: { title: 'Инвентарь оборудования', desc: 'Живой реестр каждого устройства — ноутбуки, мониторы, телефоны, сетевое оборудование и другое.', bullets: ['Автоматические последовательные метки + QR/штрихкод-этикетки', 'Фильтры: статус, местоположение, категория, срок службы (EOL)', 'Массовый возврат, ремонт, этикетки — и импорт Excel/CSV'], tip: 'Используйте зелёную кнопку «Новый актив» на боковой панели для быстрого добавления.' },
+    catalog: { title: 'Каталог продуктов', desc: 'Центральные списки, питающие каждую форму — без хаоса вручную введённых брендов.', bullets: ['Категории со сроком службы по умолчанию (месяцы)', 'Списки вариантов CPU/RAM/накопителя', 'Локации и отделы, используемые во всём приложении'], tip: 'Сначала обновите каталог для чистых выпадающих списков.' },
+    employees: { title: 'Сотрудники', desc: 'У кого что — устройства, места ПО, мобильные линии и подписанные документы.', bullets: ['Карточка сотрудника с активами и хронологией', 'Повторно печатайте передачу или создавайте текущую форму назначения', 'Загружайте подписанные PDF/фото-сканы в архив'], tip: 'Откройте сотрудника → вкладка Документы для созданных PDF и сканов.' },
+    handover: { title: 'Передача (Zimmet)', desc: 'Атомарная корзина: выберите сотрудника, добавьте оборудование и/или линии, подтвердите — печать или PDF.', bullets: ['Один или отдельные документы на позицию', 'Несколько визуальных дизайнов передачи (Terminal, Classic…)', 'Опциональный раздел возврата и редактируемый предпросмотр'], tip: 'Выберите дизайн формы в Настройках — или смените его в диалоге печати.' },
+    licenses: { title: 'ПО и лицензии', desc: 'Пулы мест с назначением/отзывом — передача ПО рядом с оборудованием.', bullets: ['Всего и использовано мест, атомарное назначение', 'Назначайте из карточки сотрудника или экрана лицензий', '30-дневные оповещения об истечении на панели'], tip: 'Отзыв места сразу освобождает его для другого.' },
+    lines: { title: 'Мобильные линии', desc: 'Корпоративные SIM и номера — назначаются как устройства и указываются в формах передачи.', bullets: ['Оператор, тариф, серийный номер SIM, ежемесячная стоимость', 'Назначение/возврат с историей', 'Добавляйте свободные линии в корзину передачи'], tip: 'В корзине показываются только активные и неназначенные линии.' },
+    consumables: { title: 'Расходные материалы', desc: 'Тонер, кабели, адаптеры — уровни запасов с оповещениями о минимуме.', bullets: ['Отслеживайте количество и порог дозаказа', 'Метки низкого запаса на панели', 'Простые корректировки без полной маркировки'], tip: 'Задайте минимальный запас, чтобы колокол предупреждал до исчерпания.' },
+    maintenance: { title: 'Обслуживание и ремонт', desc: 'Отправьте устройство в сервис, добавьте заметки о ходе, верните или спишите — с приложенными документами.', bullets: ['Статус ремонта восстанавливает прежнее назначение, если возможно', 'Заметки попадают в историю устройства', 'Прикрепляйте счета/фото к журналу ремонта'], tip: 'Начинайте ремонт из строки актива — не только с этого экрана.' },
+    stockcount: { title: 'Инвентаризация', desc: 'Сессии физической инвентаризации — сканируйте коды (камера или фото) и закрывайте по текущему остатку.', bullets: ['Откройте пересчёт, сканируйте с любого авторизованного устройства', 'Фильтры найдено/отсутствует/неизвестно при закрытии', 'Экспортируйте отфильтрованный CSV результата'], tip: 'На телефонах предпочитайте непрерывное сканирование камерой.' },
+    reports: { title: 'Отчёты', desc: 'Готовые и настраиваемые отчёты — столбцы, фильтры, экспорт CSV и печать с фирменным бланком.', bullets: ['Готовые шаблоны для типовых ИТ-вопросов', 'Создавайте свои из нескольких источников данных', 'Экспортируйте CSV для Excel или печатайте с брендом'], tip: 'Сначала используйте шаблоны — затем клонируйте идею в свой отчёт.' },
+    users: { title: 'ИТ-пользователи и безопасность', desc: 'Приглашайте команду с нужной ролью. Owner управляет брендингом и шаблонами.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'Отключайте учётные записи без потери истории аудита', 'Усиленные умолчания: CSP, лимиты запросов, транзакционные записи'], tip: 'Только Owner может открыть Настройки → дизайны передачи и логотип.' },
+  },
+  ar: {
+    welcome: { title: 'مرحبًا بك في IT Asset Control', desc: 'مساحة ITAM ذاتية الاستضافة للأجهزة والأشخاص ومستندات التسليم والتراخيص والخطوط والإصلاحات والجرد — مع سجل تدقيق كامل.', bullets: ['كل شيء في تطبيق واحد — لا مزيد من جداول Excel المبعثرة', 'نماذج تسليم قابلة للطباعة بتصاميم متعددة', 'الأدوار والبحث والتنبيهات منذ اليوم الأول'], tip: 'بعد الإعداد، استخدم المساعدة (?) لإعادة تشغيل هذه الجولة أو تفعيل/إيقاف التلميحات.' },
+    dashboard: { title: 'لوحة التحكم', desc: 'ابدأ من هنا كل صباح — المؤشرات، آخر عمليات التسليم، تنبيهات نهاية العمر والتراخيص/المخزون.', bullets: ['عدد الأجهزة حسب الحالة (في المخزون، مُسند، إصلاح…)', 'التراخيص المنتهية والمستهلكات المنخفضة', 'انتقل مباشرة إلى الأجهزة المتأخرة عن نهاية العمر'], tip: 'افتح الإشعارات (الجرس) للتنبيهات نفسها من أي صفحة.' },
+    hardware: { title: 'مخزون الأجهزة', desc: 'السجل الحي لكل جهاز — حواسيب محمولة وشاشات وهواتف ومعدات شبكة والمزيد.', bullets: ['وسوم أصول تسلسلية تلقائية + ملصقات QR/باركود', 'عوامل تصفية: الحالة، الموقع، الفئة، دورة الحياة (EOL)', 'إرجاع وإصلاح وملصقات جماعية — واستيراد Excel/CSV'], tip: 'استخدم زر «أصل جديد» الأخضر في الشريط الجانبي لأسرع إضافة.' },
+    catalog: { title: 'كتالوج المنتجات', desc: 'قوائم مركزية تغذّي كل نموذج — دون فوضى العلامات المكتوبة يدويًا.', bullets: ['فئات بعمر افتراضي (بالأشهر)', 'قوائم خيارات المعالج/الذاكرة/التخزين', 'المواقع والأقسام المستخدمة في التطبيق'], tip: 'حدّث الكتالوج أولًا للحصول على قوائم منسدلة نظيفة.' },
+    employees: { title: 'الموظفون', desc: 'من يملك ماذا — الأجهزة ومقاعد البرامج والخطوط والمستندات الموقعة.', bullets: ['بطاقة الموظف مع الأصول النشطة والخط الزمني', 'أعد طباعة التسليم أو أنشئ نموذج إسناد حالي', 'ارفع نسخ PDF/صور موقعة إلى الأرشيف'], tip: 'افتح موظفًا → علامة التبويب المستندات لملفات PDF المُنشأة والمسح الضوئي.' },
+    handover: { title: 'التسليم (Zimmet)', desc: 'سلة ذرّية: اختر موظفًا، أضف أجهزة و/أو خطوطًا، أكّد — اطبع أو نزّل PDF.', bullets: ['مستند واحد أو منفصل لكل عنصر', 'تصاميم تسليم مرئية متعددة (Terminal، Classic…)', 'قسم إرجاع اختياري ومعاينة طباعة قابلة للتحرير'], tip: 'اختر تصميم النموذج في الإعدادات — أو بدّله في مربع الطباعة.' },
+    licenses: { title: 'البرامج والتراخيص', desc: 'مجمعات مقاعد مع الإسناد/الإلغاء — تسليم البرامج بجانب الأجهزة.', bullets: ['إجمالي المقاعد مقابل المستخدمة، إسناد ذرّي', 'أسند من تفاصيل الموظف أو شاشة التراخيص', 'تنبيهات انتهاء خلال 30 يومًا على اللوحة'], tip: 'إلغاء مقعد يحرره فورًا لشخص آخر.' },
+    lines: { title: 'الخطوط الجوالة', desc: 'شرائح وأرقام الشركة — قابلة للإسناد كالأجهزة ومدرجة في نماذج التسليم.', bullets: ['المشغّل، الباقة، الرقم التسلسلي للشريحة، التكلفة الشهرية', 'إسناد/استرجاع مع السجل', 'أضف خطوطًا حرة إلى سلة التسليم'], tip: 'تظهر في السلة الخطوط النشطة وغير المسندة فقط.' },
+    consumables: { title: 'المستهلكات', desc: 'الحبر والكابلات والمحولات — مستويات المخزون مع تنبيهات الحد الأدنى.', bullets: ['تتبّع الكمية وحد إعادة الطلب', 'شارات المخزون المنخفض على اللوحة', 'تعديلات بسيطة دون وسم كامل'], tip: 'حدد حدًا أدنى للمخزون لينبّهك الجرس قبل النفاد.' },
+    maintenance: { title: 'الصيانة والإصلاح', desc: 'أرسل جهازًا للصيانة، أضف ملاحظات تقدّم، أعده أو اشطبه — مع إرفاق المستندات.', bullets: ['تعيد حالة الإصلاح الإسناد السابق عند الإمكان', 'تُسجّل الملاحظات في سجل الجهاز', 'أرفق الفواتير/الصور بسجل الإصلاح'], tip: 'ابدأ الإصلاح من صف الأصل — وليس فقط من هذه الشاشة.' },
+    stockcount: { title: 'جرد المخزون', desc: 'جلسات جرد مادي — امسح الرموز (كاميرا أو صورة) وأغلق مقابل المخزون الحي.', bullets: ['افتح جردًا، امسح من أي جهاز مسجّل الدخول', 'عوامل تصفية موجود/مفقود/غير معروف عند الإغلاق', 'صدّر CSV مُصفّى للنتيجة'], tip: 'على الهواتف، يُفضّل المسح المستمر بالكاميرا.' },
+    reports: { title: 'التقارير', desc: 'تقارير جاهزة ومخصصة — أعمدة وعوامل تصفية وتصدير CSV وطباعة بترويسة.', bullets: ['قوالب جاهزة للأسئلة الشائعة لتقنية المعلومات', 'أنشئ تقريرك من مصادر بيانات متعددة', 'صدّر CSV إلى Excel أو اطبع بالعلامة التجارية'], tip: 'استخدم القوالب أولًا — ثم استنسخ الفكرة في تقرير مخصص.' },
+    users: { title: 'مستخدمو تقنية المعلومات والأمان', desc: 'ادعُ فريقك بالدور المناسب. يتحكم Owner في العلامة والقوالب.', bullets: ['Owner / Admin / Helpdesk / Viewer', 'عطّل الحسابات دون فقدان سجل التدقيق', 'إعدادات معززة: CSP، حدود المعدل، كتابات معاملاتية'], tip: 'يمكن لـ Owner فقط فتح الإعدادات → تصاميم التسليم والشعار.' },
+  },
+  ja: {
+    welcome: { title: 'IT Asset Control へようこそ', desc: 'ハードウェア、担当者、貸与書類、ライセンス、回線、修理、棚卸しのためのセルフホスト型 ITAM ワークスペース — 完全な監査証跡付き。', bullets: ['すべてが1つのアプリに — バラバラのExcelはもう不要', '複数のデザインで印刷可能な貸与書類', 'ロール・検索・アラートを初日から'], tip: 'セットアップ後は、ヘルプ (?) からこのツアーを再生したりヒントを切り替えたりできます。' },
+    dashboard: { title: 'ダッシュボード', desc: '毎朝ここから — KPI、最近の貸与、EOL警告、ライセンス/在庫アラート。', bullets: ['ステータス別の資産数（在庫、割当済み、修理中…）', '期限切れ間近のライセンスと在庫僅少の消耗品', 'EOL超過の機器へ直接ジャンプ'], tip: '通知（ベル）を開くと、どのページからでも同じアラートを確認できます。' },
+    hardware: { title: 'ハードウェア資産', desc: 'すべての機器のライブ台帳 — ノートPC、モニター、電話、ネットワーク機器など。', bullets: ['自動連番の資産タグ + QR/バーコードラベル', 'フィルター：ステータス、場所、カテゴリ、ライフサイクル（EOL）', '一括返却・修理・ラベル — および Excel/CSV インポート'], tip: 'サイドバーの緑の「新規資産」ボタンで最速追加。' },
+    catalog: { title: '製品カタログ', desc: 'すべてのフォームを支える中央リスト — 手入力ブランドの混乱なし。', bullets: ['既定のライフサイクル（月数）付きカテゴリ', 'CPU/RAM/ストレージの選択肢リスト', 'アプリ全体で使う場所と部署'], tip: 'まずカタログを更新して、きれいなドロップダウンに。' },
+    employees: { title: '従業員', desc: '誰が何を保有 — 機器、ソフトウェア席、モバイル回線、署名済み書類。', bullets: ['有効資産と履歴タイムライン付きの従業員カード', '貸与を再印刷、または現在の割当書類を生成', '署名済み PDF/写真スキャンをアーカイブへアップロード'], tip: '従業員を開く → 書類タブで生成PDFとスキャンを確認。' },
+    handover: { title: '貸与 (Zimmet)', desc: 'アトミックなカゴ：従業員を選び、ハードや回線を追加、確定 — 印刷またはPDFダウンロード。', bullets: ['項目ごとに単一または個別の書類', '複数のビジュアル貸与デザイン（Terminal、Classic…）', '任意の返却セクションと編集可能な印刷プレビュー'], tip: 'フォームデザインは設定で選択 — または印刷ダイアログで切替。' },
+    licenses: { title: 'ソフトウェアとライセンス', desc: '席プールで割当/取消 — ハードと並ぶソフト貸与。', bullets: ['総席数と使用席数、アトミックな割当', '従業員詳細またはライセンス画面から割当', 'ダッシュボードに30日前の期限アラート'], tip: '席を取り消すと即座に他の人へ解放されます。' },
+    lines: { title: 'モバイル回線', desc: '会社のSIMと番号 — 機器のように割当でき、貸与書類に記載。', bullets: ['通信事業者、プラン、SIMシリアル、月額費用', '履歴付きで割当/回収', '空き回線を貸与カゴに追加'], tip: 'カゴには有効かつ未割当の回線のみ表示されます。' },
+    consumables: { title: '消耗品', desc: 'トナー、ケーブル、アダプター — 最小アラート付きの在庫レベル。', bullets: ['数量と再発注しきい値を追跡', 'ダッシュボードの在庫僅少バッジ', '完全なタグ付けなしの簡単な調整'], tip: '最小在庫を設定すると、切れる前にベルが警告します。' },
+    maintenance: { title: '保守と修理', desc: '機器を修理に出し、進捗メモを追加、返却または廃棄 — 書類添付付き。', bullets: ['修理状態は可能なら以前の割当を復元', 'メモは機器履歴に記録', '請求書/写真を修理ログに添付'], tip: '修理は資産の行から開始 — この画面だけではありません。' },
+    stockcount: { title: '棚卸し', desc: '実地棚卸しセッション — バーコードをスキャン（カメラまたは写真）し、ライブ在庫に対して締め。', bullets: ['棚卸しを開き、サインイン済みの任意の端末からスキャン', '締め後に 発見/不足/不明 フィルター', '結果の絞り込みCSVをエクスポート'], tip: 'スマホでは連続カメラスキャンを推奨。' },
+    reports: { title: 'レポート', desc: 'プリセットとカスタムのレポート — 列、フィルター、CSVエクスポート、レターヘッド印刷。', bullets: ['一般的なIT課題向けの既製プリセット', '複数のデータソースから自作', 'Excel用にCSV出力、または会社ブランドで印刷'], tip: 'まずプリセットを使用 — その後アイデアをカスタムレポートに複製。' },
+    users: { title: 'ITユーザーとセキュリティ', desc: '適切なロールでチームを招待。Owner がブランドとテンプレートを管理。', bullets: ['Owner / Admin / Helpdesk / Viewer', '監査履歴を失わずにアカウントを無効化', '強化された既定：CSP、レート制限、トランザクション書き込み'], tip: 'Owner のみが 設定 → 貸与デザインとロゴ を開けます。' },
+  },
+};
+
+/** Resolve an OB_TOUR item in the active language (localized overrides, else English). */
+function obItem(s) {
+  const lang = (typeof i18nLang === 'function') ? i18nLang() : 'en';
+  const map = OB_TOUR_I18N[lang];
+  const loc = map && map[s.id];
+  return loc ? { ...s, ...loc } : s;
+}
+
 function obPreviewHtml(kind) {
   const shell = (main) => `
     <div class="ob-mock" aria-hidden="true">
@@ -456,9 +752,11 @@ function renderTour() {
   const stepLabel = $('#ob-step-label');
   if (stepLabel) {
     stepLabel.textContent = obStep >= OB_TOUR.length
-      ? `Setup · ${total}/${total}`
+      ? `${t('ob.setup')} · ${total}/${total}`
       : `${obStep + 1} / ${total}`;
   }
+  const skipBtn = $('#ob-skip');
+  if (skipBtn) skipBtn.textContent = t('ob.skip');
 
   const setup = $('#ob-setup');
   const tour = $('#ob-tour');
@@ -471,19 +769,19 @@ function renderTour() {
   setup.classList.add('hidden');
   tour.classList.remove('hidden');
 
-  const s = OB_TOUR[obStep];
+  const s = obItem(OB_TOUR[obStep]);
   const last = obStep === OB_TOUR.length - 1;
   tour.innerHTML = `
     <div class="ob-layout">
       <aside class="ob-rail" aria-label="Features">
-        ${OB_TOUR.map((item, i) => `
+        ${OB_TOUR.map((raw, i) => { const item = obItem(raw); return `
           <button type="button" class="ob-rail-item ${i === obStep ? 'on' : ''} ${i < obStep ? 'done' : ''}" data-dot="${i}">
             <span class="ms">${item.icon}</span>
             <span class="ob-rail-label">${esc(item.title.split('(')[0].trim())}</span>
-          </button>`).join('')}
+          </button>`; }).join('')}
         <button type="button" class="ob-rail-item setup" data-dot="${OB_TOUR.length}">
           <span class="ms">rocket_launch</span>
-          <span class="ob-rail-label">Setup</span>
+          <span class="ob-rail-label">${esc(t('ob.setup'))}</span>
         </button>
       </aside>
       <div class="ob-slide ob-slide-rich">
@@ -499,14 +797,14 @@ function renderTour() {
           </div>
           <div class="ob-preview-wrap">
             ${obPreviewHtml(s.preview)}
-            <div class="ob-preview-caption">Interface preview</div>
+            <div class="ob-preview-caption">${esc(t('ob.preview'))}</div>
           </div>
         </div>
         <div class="ob-nav">
           <button type="button" class="btn btn-outline" id="ob-back" ${obStep === 0 ? 'disabled' : ''}>
-            <span class="ms">arrow_back</span> Back</button>
+            <span class="ms">arrow_back</span> ${esc(t('ob.back'))}</button>
           <button type="button" class="btn btn-primary" id="ob-next">
-            ${last ? 'Continue to setup' : 'Next'} <span class="ms">arrow_forward</span></button>
+            ${last ? esc(t('ob.continueSetup')) : esc(t('ob.next'))} <span class="ms">arrow_forward</span></button>
         </div>
       </div>
     </div>`;
@@ -760,7 +1058,8 @@ function setTipsEnabled(on) {
 
 function tipForCurrentRoute() {
   const [raw] = (location.hash || '#/dashboard').split('?');
-  return OB_TOUR.find((s) => s.route === raw) || null;
+  const found = OB_TOUR.find((s) => s.route === raw);
+  return found ? obItem(found) : null;
 }
 
 function renderPageTip(opts = {}) {
@@ -793,7 +1092,7 @@ function renderPageTip(opts = {}) {
 function showProductTourModal() {
   let step = 0;
   const paint = (overlay) => {
-    const s = OB_TOUR[step];
+    const s = obItem(OB_TOUR[step]);
     $('#pt-body', overlay).innerHTML = `
       <div class="ob-slide-grid" style="margin:0">
         <div>
@@ -846,7 +1145,7 @@ function startUiTour() {
       toast('Sidebar tour complete', 'success');
       return;
     }
-    const s = steps[i];
+    const s = obItem(steps[i]);
     location.hash = s.route;
     setTimeout(() => {
       $$('#nav a').forEach((a) => a.classList.toggle('tip-highlight', a.dataset.route === s.route));
@@ -936,6 +1235,34 @@ function showSettings() {
         </div>
       </div>
 
+      <div class="gs-section" style="margin:18px 0 6px">Barcode label</div>
+      <p class="cell-sub" style="margin:0 0 8px">Design the printed asset barcode label — sizes and which fields appear.
+        Applies to every <strong>Print Labels</strong> action across the app.</p>
+      <div class="form-grid">
+        <div class="form-field"><label>Label width (mm)</label>
+          <input type="number" id="lbl-w" min="20" max="150"></div>
+        <div class="form-field"><label>Label height (mm)</label>
+          <input type="number" id="lbl-h" min="10" max="150"></div>
+        <div class="form-field"><label>Barcode height (mm)</label>
+          <input type="number" id="lbl-bc" min="5" max="40"></div>
+        <div class="form-field"><label>Copies per asset</label>
+          <input type="number" id="lbl-copies" min="1" max="50"></div>
+        <div class="form-field full">
+          <label>Fields to print</label>
+          <div id="lbl-toggles" class="lbl-toggles">
+            <label><input type="checkbox" id="lbl-logo"> Logo</label>
+            <label><input type="checkbox" id="lbl-company"> Company name</label>
+            <label><input type="checkbox" id="lbl-model"> Brand &amp; model</label>
+            <label><input type="checkbox" id="lbl-category"> Category</label>
+            <label><input type="checkbox" id="lbl-serial"> Serial no</label>
+          </div>
+        </div>
+        <div class="form-field full">
+          <label>Live preview</label>
+          <div id="lbl-preview" class="lbl-preview"></div>
+        </div>
+      </div>
+
       <div class="gs-section" style="margin:18px 0 6px">Handover &amp; Repair Documents</div>
       <p class="cell-sub" style="margin:0 0 4px">Uploaded signed handover scans and repair paperwork are stored
         <strong>securely in your database</strong> — access-controlled by role and included in your
@@ -960,6 +1287,41 @@ function showSettings() {
         r.readAsDataURL(file);
       });
       $('#set-customize-tpl', overlay).addEventListener('click', () => showTemplateCustomizer());
+
+      // ---- Barcode label designer (live preview) ----
+      const LBL_DEF = { widthMm: 58, heightMm: 32, barcodeMm: 12, copies: 1,
+        showLogo: true, showCompany: true, showModel: true, showCategory: true, showSerial: true };
+      const lc = { ...LBL_DEF, ...(AppConfig.labelConfig || {}) };
+      $('#lbl-w', overlay).value = lc.widthMm;
+      $('#lbl-h', overlay).value = lc.heightMm;
+      $('#lbl-bc', overlay).value = lc.barcodeMm;
+      $('#lbl-copies', overlay).value = lc.copies;
+      $('#lbl-logo', overlay).checked = !!lc.showLogo;
+      $('#lbl-company', overlay).checked = !!lc.showCompany;
+      $('#lbl-model', overlay).checked = !!lc.showModel;
+      $('#lbl-category', overlay).checked = !!lc.showCategory;
+      $('#lbl-serial', overlay).checked = !!lc.showSerial;
+      const readLabelCfg = () => ({
+        widthMm: Math.min(150, Math.max(20, Number($('#lbl-w', overlay).value) || LBL_DEF.widthMm)),
+        heightMm: Math.min(150, Math.max(10, Number($('#lbl-h', overlay).value) || LBL_DEF.heightMm)),
+        barcodeMm: Math.min(40, Math.max(5, Number($('#lbl-bc', overlay).value) || LBL_DEF.barcodeMm)),
+        copies: Math.min(50, Math.max(1, Math.round(Number($('#lbl-copies', overlay).value) || 1))),
+        showLogo: $('#lbl-logo', overlay).checked,
+        showCompany: $('#lbl-company', overlay).checked,
+        showModel: $('#lbl-model', overlay).checked,
+        showCategory: $('#lbl-category', overlay).checked,
+        showSerial: $('#lbl-serial', overlay).checked,
+      });
+      const sampleAsset = { assetTag: 'IT-1042', brand: 'Dell', model: 'Latitude 5540',
+        category: 'Laptop', serialNumber: 'SN-10231' };
+      const renderLabelPreview = () => {
+        const box = $('#lbl-preview', overlay);
+        if (!box || typeof assetLabelHTML !== 'function') return;
+        box.innerHTML = assetLabelHTML(sampleAsset, readLabelCfg());
+      };
+      overlay.querySelectorAll('#lbl-w, #lbl-h, #lbl-bc, #lbl-copies, #lbl-toggles input')
+        .forEach((inp) => inp.addEventListener('input', renderLabelPreview));
+      renderLabelPreview();
       // Design picker cards — selecting one promotes that template (by design id) to default.
       const designBox = $('#set-design-cards', overlay);
       let selectedDesign = (AppConfig.handoverTemplate && AppConfig.handoverTemplate.design)
@@ -1018,6 +1380,7 @@ function showSettings() {
               language: langChoice,
               handoverTemplates: list,
               defaultTemplateId: list[0].id,
+              labelConfig: readLabelCfg(),
             },
           });
           AppConfig.companyName = saved.companyName;
@@ -1026,6 +1389,7 @@ function showSettings() {
           AppConfig.handoverTerms = saved.handoverTerms;
           AppConfig.handoverTemplates = saved.handoverTemplates;
           AppConfig.handoverTemplate = saved.handoverTemplate;
+          AppConfig.labelConfig = saved.labelConfig;
           applyBranding();
           toast('Settings saved', 'success');
           closeModal();

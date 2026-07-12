@@ -17,7 +17,7 @@ function pageHead(title, sub, actionsHtml = '') {
 }
 
 const CATEGORY_ICONS = {
-  Laptop: 'laptop_mac', Desktop: 'desktop_windows', Monitor: 'desktop_windows',
+  Laptop: 'laptop_mac', Desktop: 'desktop_windows', Monitor: 'desktop_windows', Television: 'tv',
   Phone: 'smartphone', Tablet: 'tablet', Printer: 'print', Network: 'router',
   Keyboard: 'keyboard', Mouse: 'mouse', Headset: 'headset_mic', 'Docking Station': 'dock',
   Webcam: 'videocam', Peripheral: 'mouse', Accessory: 'cable', Other: 'devices_other',
@@ -49,12 +49,14 @@ function lifecycleLabel(x) {
 }
 
 /* ---- Printable Code 128 asset labels (barcode + product info) ---- */
-const LABEL_DEFAULTS = { widthMm: 58, barcodeMm: 10, copies: 1 };
+/* Sizes + field toggles are configured instance-wide in Settings → Barcode label
+   (AppConfig.labelConfig). LABEL_DEFAULTS is only the offline fallback. */
+const LABEL_DEFAULTS = { widthMm: 58, heightMm: 32, barcodeMm: 12, copies: 1,
+  showLogo: true, showCompany: true, showModel: true, showCategory: true, showSerial: true };
 const MM_TO_PX = 96 / 25.4; // CSS: 1mm = 96/25.4 px
 
 function labelOpts() {
-  try { return { ...LABEL_DEFAULTS, ...JSON.parse(localStorage.getItem('itacm:labelOpts') || '{}') }; }
-  catch { return { ...LABEL_DEFAULTS }; }
+  return { ...LABEL_DEFAULTS, ...(AppConfig.labelConfig || {}) };
 }
 
 function assetLabelHTML(a, opts = LABEL_DEFAULTS) {
@@ -62,48 +64,68 @@ function assetLabelHTML(a, opts = LABEL_DEFAULTS) {
   try {
     bc = code128SVG(a.assetTag, { height: Math.round(opts.barcodeMm * MM_TO_PX), moduleWidth: 2, margin: 6 });
   } catch { bc = `<div class="mono">${esc(a.assetTag)}</div>`; }
-  return `<div class="asset-label" style="width:${opts.widthMm}mm">
-    <div class="al-co">${esc((AppConfig.companyName || 'IT Asset Control Pro').toUpperCase())}</div>
-    <div class="al-model">${esc(a.brand || '')} ${esc(a.model || '')}</div>
+  const info = [a.brand, a.model].filter(Boolean).join(' ');
+  const logo = (opts.showLogo && AppConfig.companyLogo)
+    ? `<img class="al-logo" src="${esc(AppConfig.companyLogo)}" alt="">` : '';
+  const co = opts.showCompany
+    ? `<span class="al-co">${esc((AppConfig.companyName || 'IT Asset Control Pro').toUpperCase())}</span>` : '';
+  const head = (logo || co) ? `<div class="al-head">${logo}${co}</div>` : '';
+  const model = (opts.showModel && info) ? `<div class="al-model">${esc(info)}</div>` : '';
+  const metaParts = [];
+  if (opts.showCategory && a.category) metaParts.push(`<span class="al-cat">${esc(a.category)}</span>`);
+  if (opts.showSerial) metaParts.push(`<span class="al-sn mono">SN ${esc(a.serialNumber || '—')}</span>`);
+  const meta = metaParts.length ? `<div class="al-meta">${metaParts.join('')}</div>` : '';
+  return `<div class="asset-label" style="width:${opts.widthMm}mm;height:${opts.heightMm}mm">
+    ${head}
     <div class="al-bc">${bc}</div>
-    <div class="al-meta"><span>${esc(a.category || '')}</span><span class="mono">SN ${esc(a.serialNumber || '—')}</span></div>
+    ${model}
+    ${meta}
   </div>`;
 }
 
+/** Set (or clear) a dynamic @page rule so the printer's page size equals the
+ *  physical label — the only reliable way to make a label/thermal printer feed
+ *  and cut one label at a time from the browser. Cleared after printing so it
+ *  never leaks into A4 receipt printing. */
+function setLabelPrintPage(widthMm, heightMm) {
+  let s = document.getElementById('label-print-style');
+  if (!s) { s = document.createElement('style'); s.id = 'label-print-style'; document.head.appendChild(s); }
+  s.textContent = !widthMm ? '' : `@media print {
+    @page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }
+    .print-root { padding: 0 !important; }
+    .print-root .label-page { padding: 0 !important; gap: 0 !important; margin: 0 !important; }
+    .print-root .asset-label { width: ${widthMm}mm !important; height: ${heightMm}mm !important;
+      border: none !important; border-radius: 0 !important; }
+  }`;
+}
+
 /**
- * Ask for label dimensions (remembered per browser), then print one label per
- * asset — each asset on its own page (bulk = sequential pages), with the
- * chosen size and copy count.
+ * Print ONE label per page at exactly the label's size — every copy of every
+ * asset is its own page, so a label/thermal printer feeds and cuts them one by
+ * one. The label design (sizes + which fields to show) comes from Settings.
  */
 function printAssetLabels(assets) {
   const list = (assets || []).filter(Boolean)
     .slice().sort((a, b) => String(a.assetTag).localeCompare(String(b.assetTag), undefined, { numeric: true }));
   if (!list.length) return toast('Select at least one asset to print labels', 'error');
-  const cur = labelOpts();
-  formModal({
-    title: `Print labels — ${list.length} asset(s)`,
-    fields: [
-      { name: 'widthMm', label: 'Label width (mm)', type: 'number', required: true, value: cur.widthMm },
-      { name: 'barcodeMm', label: 'Barcode height (mm)', type: 'number', required: true, value: cur.barcodeMm },
-      { name: 'copies', label: 'Copies per asset', type: 'number', required: true, value: cur.copies },
-    ],
-    submitLabel: 'Print',
-    async onSubmit(d) {
-      const opts = {
-        widthMm: Math.min(150, Math.max(25, Number(d.widthMm) || LABEL_DEFAULTS.widthMm)),
-        barcodeMm: Math.min(40, Math.max(5, Number(d.barcodeMm) || LABEL_DEFAULTS.barcodeMm)),
-        copies: Math.min(20, Math.max(1, Math.round(Number(d.copies) || 1))),
-      };
-      localStorage.setItem('itacm:labelOpts', JSON.stringify(opts));
-      // One page per asset so bulk print feeds labels one-by-one on label printers.
-      const pages = list.map((a) => {
-        const copies = Array.from({ length: opts.copies }, () => assetLabelHTML(a, opts));
-        return `<div class="label-page">${copies.join('')}</div>`;
-      });
-      $('#print-root').innerHTML = pages.join('');
-      window.print();
-    },
-  });
+  const opts = labelOpts();
+  const copies = Math.min(50, Math.max(1, Math.round(opts.copies || 1)));
+  const pages = [];
+  for (const a of list) {
+    for (let i = 0; i < copies; i++) pages.push(`<div class="label-page">${assetLabelHTML(a, opts)}</div>`);
+  }
+  const root = $('#print-root');
+  root.classList.add('labels');
+  root.innerHTML = pages.join('');
+  setLabelPrintPage(opts.widthMm, opts.heightMm);
+  const cleanup = () => {
+    setLabelPrintPage(null);          // restore A4 @page for receipts
+    root.classList.remove('labels');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 60000);         // safety net if afterprint never fires
+  window.print();
 }
 
 /* =============================== DASHBOARD =============================== */
@@ -389,7 +411,7 @@ Views.assets = async function (el, params = {}) {
   const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const page = Math.min(Math.max(1, Number(params.page) || 1), pages);
   const pageItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
+  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
 
   const chips = [];
   if (params.status) chips.push({ key: 'status', label: `Status: ${params.status}` });
@@ -665,7 +687,7 @@ function exportCsv(items) {
 
 async function assetForm(asset, done) {
   const s = (asset && asset.specs) || {};
-  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
+  const CATS = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
   const catalog = await api('/catalog').catch(() => []);
   const state = {
     category: (asset && asset.category) || 'Laptop',
@@ -732,6 +754,7 @@ async function assetForm(asset, done) {
         Tablet: ['macWifi', 'storage', 'os'],
         Phone: ['macWifi', 'storage', 'os'],
         Monitor: [],
+        Television: ['macEthernet', 'macWifi'],
         Printer: ['macEthernet', 'macWifi'],
         Network: ['macEthernet'],
         Keyboard: [], Mouse: [], Headset: [], Webcam: [],
@@ -2630,7 +2653,7 @@ Views.catalog = async function (el) {
       title: 'Add catalog model',
       fields: [
         { name: 'category', label: 'Category *', type: 'select', required: true, value: 'Laptop',
-          options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'] },
+          options: ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'] },
         { name: 'brand', label: 'Brand *', required: true },
         { name: 'model', label: 'Model *', required: true, full: true },
       ],
@@ -3263,7 +3286,7 @@ async function buildReport(id) {
 }
 
 /* ---- Custom report builder: any source × any columns × filters ---- */
-const CRB_CATS = ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
+const CRB_CATS = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
 const CUSTOM_SOURCES = {
   assets: {
     label: 'Hardware Assets',
@@ -3921,6 +3944,20 @@ async function decodeCanvasWithZXing(ZX, canvas) {
   }
 }
 
+/** Fast, synchronous single-frame decode straight off a canvas (no data-URL
+ *  round-trip) using ZXing's low-level bitmap API. Used by the live camera loop
+ *  where we decode many frames per second. Returns '' when no code is found. */
+function decodeFrameWithZXing(ZX, reader, canvas) {
+  try {
+    const source = new ZX.HTMLCanvasElementLuminanceSource(canvas);
+    const bitmap = new ZX.BinaryBitmap(new ZX.HybridBinarizer(source));
+    const result = reader.decodeBitmap(bitmap);
+    return result && result.getText ? result.getText().trim() : '';
+  } catch {
+    return ''; // NotFoundException on most frames — expected.
+  }
+}
+
 /**
  * Decode a barcode/QR from a camera photo. Tries BarcodeDetector + ZXing across
  * several scales and a center crop — phone cameras often shoot 12MP+ images that
@@ -4033,11 +4070,10 @@ async function scanWithCamera(onCode) {
   }
 
   return new Promise((resolve) => {
-    let last = ''; let lastAt = 0; let timer = null; let zxControls = null; let busy = false;
+    let last = ''; let lastAt = 0; let timer = null; let busy = false;
     let switchingToPhoto = false;
     const cleanup = () => {
       clearInterval(timer);
-      try { if (zxControls && zxControls.stop) zxControls.stop(); } catch { /* ignore */ }
       stream.getTracks().forEach((t) => t.stop());
     };
     const setFeedback = (text, ok) => {
@@ -4091,39 +4127,66 @@ async function scanWithCamera(onCode) {
           resolve(scanWithPhoto(onCode));
         });
 
-        // Run ZXing continuously (strong on Code 128 labels) and BarcodeDetector
-        // in parallel when available — do not rely on BarcodeDetector alone.
-        try {
-          const ZX = await loadZXing();
-          const reader = zxingReader(ZX);
-          zxControls = await reader.decodeFromStream(stream, video, (result, err) => {
-            if (result) accept(result.getText());
-            // NotFoundException every frame is normal — ignore.
-            void err;
-          });
-        } catch {
-          // Fall through — BarcodeDetector-only still helps for QR.
-        }
+        // Decoders. We drive the decode ourselves off live video frames rather than
+        // relying on ZXing's continuous video decoder, which silently fails to emit
+        // results on some browsers (notably iOS Safari). Every frame is tried with
+        // BarcodeDetector (Chromium) and/or ZXing's fast bitmap API (everywhere).
+        let ZX = null;
+        try { ZX = await loadZXing(); } catch { /* offline / blocked */ }
+        const reader = ZX ? zxingReader(ZX) : null;
 
+        let detector = null;
         if ('BarcodeDetector' in window) {
-          try {
-            const detector = new BarcodeDetector({ formats: BD_FORMATS });
-            timer = setInterval(async () => {
-              try {
-                if (video.readyState < 2 || busy) return;
-                const codes = await detector.detect(video);
-                if (codes[0] && codes[0].rawValue) accept(codes[0].rawValue);
-              } catch { /* frame not ready */ }
-            }, 320);
-          } catch { /* ignore */ }
+          try { detector = new BarcodeDetector({ formats: BD_FORMATS }); } catch { detector = null; }
         }
 
-        if (!zxControls && !timer) {
+        // No decoder at all → fall back to the photo picker.
+        if (!detector && !reader) {
           switchingToPhoto = true;
           cleanup();
           closeModal();
           resolve(scanWithPhoto(onCode));
+          return;
         }
+
+        const scratch = document.createElement('canvas');
+        const sctx = scratch.getContext('2d', { willReadFrequently: true });
+        // Draw the current video frame (optionally center-cropped) into `scratch`.
+        const grab = (maxEdge, crop) => {
+          const vw = video.videoWidth, vh = video.videoHeight;
+          if (!vw || !vh) return null;
+          const cw = Math.max(1, Math.floor(vw * crop));
+          const ch = Math.max(1, Math.floor(vh * crop));
+          const sx = Math.floor((vw - cw) / 2);
+          const sy = Math.floor((vh - ch) / 2);
+          const scale = Math.min(1, maxEdge / Math.max(cw, ch));
+          scratch.width = Math.max(1, Math.round(cw * scale));
+          scratch.height = Math.max(1, Math.round(ch * scale));
+          sctx.drawImage(video, sx, sy, cw, ch, 0, 0, scratch.width, scratch.height);
+          return scratch;
+        };
+        // Full frame catches far/large codes; a center crop zooms into small labels.
+        const passes = [[1280, 1], [1024, 0.6]];
+
+        let scanning = false; // guard against overlapping async ticks
+        timer = setInterval(async () => {
+          if (busy || scanning || video.readyState < 2 || !video.videoWidth) return;
+          scanning = true;
+          try {
+            for (const [maxEdge, crop] of passes) {
+              const frame = grab(maxEdge, crop);
+              if (!frame) break;
+              if (detector) {
+                const codes = await detector.detect(frame);
+                if (codes[0] && codes[0].rawValue) { accept(codes[0].rawValue); return; }
+              }
+              if (reader) {
+                const code = decodeFrameWithZXing(ZX, reader, frame);
+                if (code) { accept(code); return; }
+              }
+            }
+          } catch { /* frame not ready / no code */ } finally { scanning = false; }
+        }, 250);
       },
     });
   });

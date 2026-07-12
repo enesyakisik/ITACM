@@ -26,45 +26,45 @@
         <div class="ob-setup-head">
           <div class="ob-slide-icon"><span class="ms">rocket_launch</span></div>
           <div>
-            <h2 class="ob-slide-title">Create your workspace</h2>
-            <p class="ob-slide-desc" style="margin:0">Company identity, zimmet design, and the <strong>Owner</strong> account.</p>
+            <h2 class="ob-slide-title" data-i18n="ob.createTitle">Create your workspace</h2>
+            <p class="ob-slide-desc" style="margin:0" data-i18n="ob.createDesc">Company identity, zimmet design, and the Owner account.</p>
           </div>
         </div>
         <p class="ob-slide-desc" style="font-size:12.5px;margin-top:12px"><span class="ms ms-sm" style="vertical-align:-2px">upload_file</span>
-          Coming from Excel? After sign-in: <strong>Hardware → Import Excel/CSV</strong> migrates devices, employees and zimmet.</p>
+          <span data-i18n="ob.excelHint">Coming from Excel? After sign-in: Hardware → Import Excel/CSV migrates devices, employees and zimmet.</span></p>
         <form id="onboarding-form" class="ob-form">
-          <h3 class="ob-section">Company</h3>
-          <label>Company name *
+          <h3 class="ob-section" data-i18n="ob.secCompany">Company</h3>
+          <label><span data-i18n="ob.companyNameLabel">Company name</span> *
             <input type="text" name="companyName" required maxlength="80" placeholder="Acme Teknoloji A.Ş.">
           </label>
-          <label>Company logo <span class="ob-hint">(optional, PNG/JPG/SVG, max ~300KB)</span>
+          <label><span data-i18n="ob.companyLogoLabel">Company logo</span> <span class="ob-hint" data-i18n="ob.companyLogoHint">(optional, PNG/JPG/SVG, max ~300KB)</span>
             <input type="file" name="logoFile" accept="image/*">
           </label>
           <div id="ob-logo-preview" class="ob-logo-preview hidden"></div>
 
-          <h3 class="ob-section">Zimmet form design</h3>
-          <p class="ob-hint" style="margin:0 0 10px">Visual look of printed handover forms — change anytime in Settings.</p>
+          <h3 class="ob-section" data-i18n="ob.secDesign">Zimmet form design</h3>
+          <p class="ob-hint" style="margin:0 0 10px" data-i18n="ob.designHint">Visual look of printed handover forms — change anytime in Settings.</p>
           <div class="ob-tpl-cards" id="ob-tpl-cards" role="radiogroup" aria-label="Default zimmet design"></div>
 
-          <h3 class="ob-section">Owner account <span class="ob-hint">(highest privilege)</span></h3>
-          <label>Display name *
+          <h3 class="ob-section"><span data-i18n="ob.secOwner">Owner account</span> <span class="ob-hint" data-i18n="ob.ownerHint">(highest privilege)</span></h3>
+          <label><span data-i18n="ob.displayName">Display name</span> *
             <input type="text" name="adminUsername" required placeholder="Enes Yakışık">
           </label>
-          <label>Email *
+          <label><span data-i18n="login.email">Email</span> *
             <input type="email" name="adminEmail" required placeholder="owner@company.com" autocomplete="username">
           </label>
-          <label>Password * <span class="ob-hint">(min 8 characters)</span>
+          <label><span data-i18n="login.password">Password</span> * <span class="ob-hint" data-i18n="ob.passwordHint">(min 8 characters)</span>
             <input type="password" name="adminPassword" required minlength="8" autocomplete="new-password">
           </label>
           <label class="ob-check">
             <input type="checkbox" name="enableTips" checked>
-            <span>Show UI tips after I sign in (you can turn this off anytime from Help)</span>
+            <span data-i18n="ob.tips">Show UI tips after I sign in (you can turn this off anytime from Help)</span>
           </label>
           <div id="onboarding-error" class="login-error hidden"></div>
           <div class="ob-nav">
-            <button type="button" class="btn btn-outline" id="ob-form-back"><span class="ms">arrow_back</span> Back</button>
+            <button type="button" class="btn btn-outline" id="ob-form-back"><span class="ms">arrow_back</span> <span data-i18n="ob.back">Back</span></button>
             <button type="submit" class="btn btn-primary" id="onboarding-btn">
-              <span class="ms">rocket_launch</span> Complete Setup
+              <span class="ms">rocket_launch</span> <span data-i18n="ob.completeSetup">Complete Setup</span>
             </button>
           </div>
         </form>

@@ -4,8 +4,29 @@ const { HttpError } = require('../../utils/httpError');
 const {
   DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS,
   DEFAULT_HANDOVER_TEMPLATE, DEFAULT_HANDOVER_TEMPLATES, MAX_HANDOVER_TEMPLATES,
-  DEFAULT_DEPARTMENTS, HANDOVER_DESIGN_IDS,
+  DEFAULT_LABEL_CONFIG, DEFAULT_DEPARTMENTS, HANDOVER_DESIGN_IDS,
 } = require('../../utils/defaults');
+
+const LABEL_NUM_KEYS = { widthMm: [20, 150], heightMm: [10, 150], barcodeMm: [5, 40], copies: [1, 50] };
+const LABEL_BOOL_KEYS = ['showLogo', 'showCompany', 'showModel', 'showCategory', 'showSerial'];
+
+/** Sanitize the barcode-label config: clamp numeric sizes, coerce booleans. */
+function sanitizeLabelConfig(cfg) {
+  if (cfg == null) return null;
+  if (typeof cfg !== 'object' || Array.isArray(cfg)) {
+    throw HttpError.badRequest('labelConfig must be an object');
+  }
+  const out = {};
+  for (const [k, [lo, hi]] of Object.entries(LABEL_NUM_KEYS)) {
+    if (k in cfg) {
+      const n = Math.round(Number(cfg[k]));
+      if (!Number.isFinite(n)) throw HttpError.badRequest(`labelConfig.${k} must be a number`);
+      out[k] = Math.min(hi, Math.max(lo, n));
+    }
+  }
+  for (const k of LABEL_BOOL_KEYS) if (k in cfg) out[k] = !!cfg[k];
+  return out;
+}
 
 const BOOL_KEYS = ['showLogo', 'showEmployeeId', 'showDepartment', 'showTitle',
   'colCategory', 'colSerial', 'colMac', 'colCondition', 'showTerms', 'showReturnSection'];
@@ -118,7 +139,7 @@ async function getSettings() {
   const { rows } = await query(
     `SELECT company_name, company_logo, company_address, onboarded, handover_terms, lifecycles,
             locations, default_location, spec_options, document_storage, handover_template,
-            handover_templates, departments, language
+            handover_templates, departments, language, label_config
      FROM app_settings WHERE id = 1`
   );
   const s = rows[0] || {};
@@ -137,6 +158,7 @@ async function getSettings() {
     specOptions: { ...DEFAULT_SPEC_OPTIONS, ...(s.spec_options || {}) },
     documentStorage: s.document_storage || { provider: 'local' },
     language: s.language || 'en',
+    labelConfig: { ...DEFAULT_LABEL_CONFIG, ...(s.label_config || {}) },
     handoverTemplates,
     // First template = default (used by older callers that only read handoverTemplate).
     handoverTemplate,
@@ -176,7 +198,7 @@ function validateSpecOptions(so) {
 async function saveSettings({
   companyName, companyLogo, companyAddress, onboarded, handoverTerms, lifecycles,
   locations, defaultLocation, specOptions, documentStorage, handoverTemplate,
-  handoverTemplates, defaultTemplateId, departments, language,
+  handoverTemplates, defaultTemplateId, departments, language, labelConfig,
 }) {
   if (language !== undefined && language !== null && !/^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(String(language))) {
     throw HttpError.badRequest('language must be a short code like "en" or "tr"');
@@ -193,6 +215,7 @@ async function saveSettings({
   validateLogo(companyLogo);
   validateLifecycles(lifecycles);
   validateSpecOptions(specOptions);
+  const labelConfigClean = sanitizeLabelConfig(labelConfig);
 
   let templatesToSave = null;
   let defaultMirror = null;
@@ -247,7 +270,8 @@ async function saveSettings({
        departments    = CASE WHEN $11::jsonb IS NOT NULL THEN $11 ELSE departments END,
        language       = CASE WHEN $12::text IS NOT NULL THEN $12 ELSE language END,
        company_address = CASE WHEN $13::text IS NOT NULL THEN $13 ELSE company_address END,
-       handover_templates = CASE WHEN $14::jsonb IS NOT NULL THEN $14 ELSE handover_templates END
+       handover_templates = CASE WHEN $14::jsonb IS NOT NULL THEN $14 ELSE handover_templates END,
+       label_config   = CASE WHEN $15::jsonb IS NOT NULL THEN $15 ELSE label_config END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecycles ? JSON.stringify(lifecycles) : null,
@@ -259,7 +283,8 @@ async function saveSettings({
      departments ? JSON.stringify(departments.map((d) => String(d).trim()).filter(Boolean)) : null,
      language ?? null,
      companyAddress !== undefined ? String(companyAddress || '') : null,
-     templatesToSave ? JSON.stringify(templatesToSave) : null]
+     templatesToSave ? JSON.stringify(templatesToSave) : null,
+     labelConfigClean ? JSON.stringify(labelConfigClean) : null]
   );
   return getSettings();
 }

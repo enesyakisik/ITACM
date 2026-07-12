@@ -74,7 +74,7 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 <td width="50%" valign="top">
 
 ### 🖥 Built-in web UI
-Served by the backend itself — no build step. Login, Dashboard, Hardware Inventory (bulk actions, QR codes, global search), Employee Directory, Handover basket, Licenses, Consumables, Maintenance and IT-User management. Just open `http://localhost:8000`.
+Served by the backend itself — no build step. Login, Dashboard, Hardware Inventory (bulk actions, QR codes, global search), Employee Directory, Handover basket, Licenses, **Mobile Lines**, Consumables, Maintenance, **Stock Count** and IT-User management. Just open `http://localhost:8000`.
 
 ### 🤝 Atomic handover basket
 Assign multiple assets to an employee in one all-or-nothing transaction, producing a printable handover receipt (Zimmet Tutanağı). Row locks make double-assignment impossible.
@@ -88,23 +88,38 @@ Send to repair / return / scrap, with the pre-repair assignment state restored a
 ### 📄 Software licenses
 Seat pools with atomic claim/release, 30-day expiry alerts, and CSV export of who holds each license.
 
+### 📱 Mobile lines
+Company SIM cards & phone numbers as first-class inventory: operator, plan, ICCID, monthly cost. Assign / take back with full history — lines show up on the employee profile and on handover forms.
+
+### 📥 Excel / CSV migration
+Download the template, fill it with your existing zimmet spreadsheet, upload — a dry-run preview shows exactly what will be created, then one transaction auto-creates employees, catalog entries, assets (sequential tags) and one handover per employee with full history.
+
 </td>
 <td width="50%" valign="top">
 
 ### 🔐 Role-based access control
-`Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly.
+`Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly. Owners can disable or delete accounts — every disable/enable/delete/role change lands in a permanent audit log.
 
 ### 🧾 Full audit trail
 Every assign / return / repair / software-zimmet is logged with who, when and why on a per-employee activity timeline; per-user login history.
 
 ### ⏳ Product lifecycle (EOL)
-Lifecycle duration per category plus per-asset overrides (e.g. MacBooks at 5 years). Every asset shows its EOL date and "EOL soon" / overdue flags.
+Lifecycle duration per category plus per-asset overrides (e.g. MacBooks at 5 years) — or untick EOL for a category (accessories) to exclude it entirely. Every asset shows its EOL date and "EOL soon" / overdue flags.
+
+### 📦 Physical stock counts
+Open a count session and scan from **any signed-in device** — start on the PC, keep scanning barcodes/QRs from your phone. Closing the session reconciles against the live inventory: found / missing / unknown, with CSV export.
+
+### 🏷 Barcode labels
+Select one or many devices and print scannable **Code 128** labels (company, model, serial) — label size, fields and copies are configurable and remembered instance-wide.
 
 ### 📈 Reports & builder
 19 grouped preset reports plus a builder (7 data sources × selectable columns × filters), exported as Excel-friendly CSV or printed with company letterhead.
 
 ### 📁 Document archive & 📦 consumables
-Upload signed handover scans and repair docs (stored in the DB, covered by backups). Track consumable stock movements with low-stock alerts.
+Upload signed handover scans and repair docs (stored in the DB, covered by backups) — click any filename to view it inline. Track consumable stock movements with low-stock alerts.
+
+### 🌍 Multi-language UI
+12 languages (EN, TR, DE, FR, ES, IT, PT, NL, PL, RU, AR, JA). Pick one on the onboarding screen, change it any time in Settings; untranslated strings fall back to English.
 
 </td>
 </tr>

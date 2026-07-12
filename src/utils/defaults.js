@@ -110,7 +110,7 @@ Yukarıda listelenen ekipmanları çalışır durumda teslim aldığımı kabul 
 /** Default lifecycle duration (months) per product category — centrally
  *  managed in Settings and applied to every asset of that category. */
 const DEFAULT_LIFECYCLES = {
-  Laptop: 48, Desktop: 60, Monitor: 72, Phone: 36, Tablet: 36,
+  Laptop: 48, Desktop: 60, Monitor: 72, Television: 84, Phone: 36, Tablet: 36,
   Printer: 60, Network: 84, Keyboard: 36, Mouse: 36, Headset: 36,
   'Docking Station': 48, Webcam: 48, Peripheral: 36, Accessory: 36, Other: 48,
 };
@@ -175,6 +175,20 @@ const DEFAULT_HANDOVER_TEMPLATES = HANDOVER_DESIGN_IDS.map((id) => ({
 
 const MAX_HANDOVER_TEMPLATES = 12;
 
+/** Default barcode/asset-label design — sizes (mm) + which fields to print.
+ *  Configured instance-wide from Settings → Barcode label. */
+const DEFAULT_LABEL_CONFIG = {
+  widthMm: 58,
+  heightMm: 32,
+  barcodeMm: 12,
+  copies: 1,
+  showLogo: true,
+  showCompany: true,
+  showModel: true,
+  showCategory: true,
+  showSerial: true,
+};
+
 module.exports = {
   DEFAULT_HANDOVER_TERMS,
   DEFAULT_LIFECYCLES,
@@ -183,6 +197,7 @@ module.exports = {
   DEFAULT_HANDOVER_TEMPLATE,
   DEFAULT_HANDOVER_TEMPLATES,
   MAX_HANDOVER_TEMPLATES,
+  DEFAULT_LABEL_CONFIG,
   DEFAULT_DEPARTMENTS,
   HANDOVER_DESIGNS,
   HANDOVER_DESIGN_IDS,
